@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
+import markets
 import weather as w
 from config import (
     CITIES,
@@ -270,33 +271,14 @@ def _parse_market_date(description):
         yr += 2000
     return f"{yr:04d}-{mon:02d}-{day:02d}"
 
+_parse_book = markets._parse_book
+
 
 def _slug(city, d):
     months = ["january", "february", "march", "april", "may", "june",
               "july", "august", "september", "october", "november", "december"]
     cslug = city.lower().replace(" ", "-")
     return f"highest-temperature-in-{cslug}-on-{months[d.month-1]}-{d.day}-{d.year}"
-
-
-def _parse_book(book):
-    bids = sorted(
-        [{"price": float(b["price"]), "size": float(b["size"])} for b in (book.get("bids") or [])],
-        key=lambda x: -x["price"],
-    )
-    asks = sorted(
-        [{"price": float(a["price"]), "size": float(a["size"])} for a in (book.get("asks") or [])],
-        key=lambda x: x["price"],
-    )
-    best_bid = bids[0]["price"] if bids else 0.0
-    best_ask = asks[0]["price"] if asks else 1.0
-    bid_size = bids[0]["size"] if bids else 0.0
-    ask_size = asks[0]["size"] if asks else 0.0
-    depth = sum(b["size"] for b in bids[:10]) + sum(a["size"] for a in asks[:10])
-    tick = float(book.get("tick_size") or 0.001)
-    min_sz = float(book.get("min_order_size") or 5)
-    neg = bool(book.get("neg_risk"))
-    last = float(book.get("last_trade_price") or 0.0)
-    return bids, asks, best_bid, best_ask, bid_size, ask_size, depth, tick, min_sz, neg, last
 
 
 def fetch_snapshots():
@@ -888,7 +870,9 @@ def daily_pnl_pulse_if_due():
     if last == today_str:
         conn.close()
         return
-    row = conn.execute("SELECT COALESCE(SUM(pnl),0) AS p FROM fills").fetchone()
+    row = conn.execute(
+        "SELECT COALESCE(SUM(pnl),0) AS p FROM settlements WHERE market_id IN (SELECT market_id FROM fills)"
+    ).fetchone()
     total = float(row["p"] or 0.0)
     n = conn.execute("SELECT COUNT(*) AS n FROM fills").fetchone()["n"]
     nset = conn.execute("SELECT COUNT(*) AS n FROM settlements").fetchone()["n"]
