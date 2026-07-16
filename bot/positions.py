@@ -1,6 +1,6 @@
 import sqlite3
 
-from config import DB_PATH, PAPER_BANKROLL
+from config import DB_PATH, PAPER_BANKROLL, PAPER_BANKROLL_FLB, PAPER_BANKROLL_ARB
 
 
 def _connect():
@@ -66,7 +66,33 @@ def format_totals(conn):
     lines.append(f"  realized PnL (settled): ${realized:+.2f}")
     lines.append(f"  paper bankroll: ${PAPER_BANKROLL:.2f} + realized ${realized:+.2f} "
                  f"= ${PAPER_BANKROLL + realized:.2f}")
+    lines.append(format_edge_totals(conn))
 
+    return "\n".join(lines)
+
+
+def format_edge_totals(conn):
+    bank = {"flb": PAPER_BANKROLL_FLB, "arb": PAPER_BANKROLL_ARB}
+    try:
+        settled = {r["edge"]: (r["n"], r["pnl"]) for r in conn.execute(
+            "SELECT edge, COUNT(*) AS n, COALESCE(SUM(pnl),0) AS pnl "
+            "FROM pm_settlements GROUP BY edge"
+        ).fetchall()}
+        open_n = {r["edge"]: r["n"] for r in conn.execute(
+            "SELECT f.edge, COUNT(*) AS n FROM pm_fills f "
+            "LEFT JOIN pm_settlements s ON s.market_id=f.market_id AND s.edge=f.edge "
+            "WHERE s.id IS NULL GROUP BY f.edge"
+        ).fetchall()}
+    except sqlite3.OperationalError:
+        return "=== edges (paper) ===\n  (edge tables not initialized)"
+    lines = ["=== edges (paper) ==="]
+    for edge in ("flb", "arb"):
+        s_n, s_pnl = settled.get(edge, (0, 0.0))
+        o_n = open_n.get(edge, 0)
+        b = bank[edge]
+        lines.append(f"  {edge}: open={o_n} settled={s_n} realized=${s_pnl:+.2f} "
+                     f"bankroll ${b:.0f} + realized ${s_pnl:+.2f} = ${b + s_pnl:.2f}")
+    lines.append("  cross-venue: shelved (no fills)")
     return "\n".join(lines)
 
 
