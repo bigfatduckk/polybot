@@ -8,7 +8,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 import engine
+import edge_engine
+import markets
+import settle
 import weather as w
+from edges import arb, crossvenue, flb
 from config import CITIES, DB_PATH, HALT_FILE
 
 ENV_PATH = Path(__file__).resolve().parent / ".env"
@@ -81,16 +85,106 @@ def job_maintain():
     engine.log({"job": "maintain", "note": msg, "settled": settled})
 
 
+def job_settle():
+    engine.init_db()
+    settled = 0
+    for edge in ("flb", "arb"):
+        settled += settle.sweep_resolutions(edge)
+    msg = f"settle: settled={settled}"
+    engine.notify(msg)
+    engine.log({"job": "settle", "note": msg, "settled": settled})
+
+
+def job_flb():
+    if os.path.exists(_halt_path()):
+        engine.notify("[HALT] flb scan skipped")
+        return
+    markets.init_edge_db()
+    scan_id = edge_engine.new_scan_id("flb")
+    cands = flb.scan_flb(scan_id)
+    state = edge_engine.load_edge_state("flb")
+    orders = edge_engine.edge_propose(cands, state)
+    fills = 0
+    for o in orders:
+        verdict = edge_engine.edge_risk_check(o, state)
+        if edge_engine.edge_execute(o, verdict) is not None:
+            fills += 1
+            state.open_markets.add(o.market_id)
+    msg = f"flb scan: cands={len(cands)} orders={len(orders)} fills={fills}"
+    engine.notify(msg)
+    engine.log({"job": "flb", "note": msg, "fills": fills})
+
+
+def job_arb():
+    if os.path.exists(_halt_path()):
+        engine.notify("[HALT] arb scan skipped")
+        return
+    markets.init_edge_db()
+    scan_id = edge_engine.new_scan_id("arb")
+    bundles = arb.scan_arb(scan_id)
+    state = edge_engine.load_edge_state("arb")
+    fills = 0
+    executed = 0
+    for b in bundles:
+        leg_orders = []
+        for leg in b["legs"]:
+            leg_orders.append(edge_engine.EdgeOrder(
+                edge="arb", market_id=leg["market_id"], token_id=leg["token_id"],
+                side=b["side"], price=leg["price"], size=leg["shares"],
+                maker_or_taker="taker", edge_size=b["net_gap"], kelly_fraction=0.0,
+                meta={"scan_id": scan_id, "bundle": b["event_id"], "n_outcomes": b["n_outcomes"]},
+            ))
+        ok = True
+        for o in leg_orders:
+            v = edge_engine.edge_risk_check(o, state)
+            if not v[0]:
+                ok = False
+                break
+        if not ok:
+            continue
+        for o in leg_orders:
+            if edge_engine.edge_execute(o, edge_engine.edge_risk_check(o, state)) is not None:
+                fills += 1
+                state.open_markets.add(o.market_id)
+        executed += 1
+    msg = f"arb scan: bundles={len(bundles)} executed={executed} legs={fills}"
+    engine.notify(msg)
+    engine.log({"job": "arb", "note": msg, "fills": fills})
+
+
+def job_crossvenue():
+    if os.path.exists(_halt_path()):
+        engine.notify("[HALT] crossvenue scan skipped")
+        return
+    markets.init_edge_db()
+    scan_id = edge_engine.new_scan_id("crossvenue")
+    gaps = crossvenue.scan_crossvenue(scan_id)
+    msg = f"crossvenue scan: gaps={len(gaps)}"
+    hot = crossvenue.notify_threshold_gaps(gaps)
+    engine.notify(msg + (("\n" + hot) if hot else ""))
+    engine.log({"job": "crossvenue", "note": msg, "gaps": len(gaps)})
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--job", required=True, choices=["weather", "maintain"])
+    ap.add_argument("--job", required=True,
+                    choices=["weather", "maintain", "settle", "flb", "arb", "crossvenue"])
     ap.add_argument("--mode", default="paper", choices=["paper", "real"])
     args = ap.parse_args()
     load_dotenv(ENV_PATH)
     engine.set_mode(args.mode)
+    edge_engine.set_mode(args.mode)
     try:
         if args.job == "weather":
             job_weather()
+        elif args.job == "settle":
+            job_settle()
+        elif args.job == "flb":
+            job_flb()
+        elif args.job == "arb":
+            job_arb()
+        elif args.job == "crossvenue":
+            job_crossvenue()
         else:
             job_maintain()
     except Exception:

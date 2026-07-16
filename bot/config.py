@@ -89,3 +89,22 @@ OPEN_METEO_ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
 WEATHER_EVENT_TITLE_RE = r"highest temperature in (.+) on (.+)"
 TAG_REFRESH_DAYS = 7
 DAILY_PULSE_HOUR_HKT = 21
+
+FLB_HORIZON_DAYS = (7, 90)
+FLB_MIN_VOLUME = 5000.0
+FLB_MIN_LIQUIDITY = 500.0
+FLB_CALIB_PATH = str(BOT_DIR / "data" / "flb_calib.json")
+FLB_PRICE_BUCKET = 0.05
+FLB_HORIZON_BUCKETS = [(0, 7), (7, 30), (30, 90), (90, 100000)]
+
+ARB_MIN_GAP = 0.02
+ARB_MIN_DEPTH = 50.0
+ARB_MAX_OUTCOMES = 12
+ARB_SCAN_TAGS = ["politics", "crypto"]
+
+CROSSVENUE_MIN_GAP = 0.03
+CROSSVENUE_TAGS = ["politics", "economics"]
+KALSHI_BASE = "https://api.elections.kalshi.com"
+
+PAPER_BANKROLL_FLB = 1000.0
+PAPER_BANKROLL_ARB = 1000.0
