@@ -53,25 +53,28 @@ def format_report(conn):
     lines.append(format_totals(conn))
 
 def format_totals(conn):
-    total_fills = conn.execute("SELECT COUNT(*) FROM fills").fetchone()[0]
-    open_n = conn.execute(
-        "SELECT COUNT(*) FROM fills WHERE market_id NOT IN (SELECT market_id FROM settlements)"
-    ).fetchone()[0]
-    settled_n = total_fills - open_n
-    realized = conn.execute(
-        "SELECT COALESCE(SUM(pnl), 0) FROM settlements WHERE market_id IN (SELECT market_id FROM fills)"
-    ).fetchone()[0]
-    lines = ["=== totals ==="]
-    lines.append(f"  open: {open_n}   settled: {settled_n}")
-    lines.append(f"  realized PnL (settled): ${realized:+.2f}")
-    lines.append(f"  paper bankroll: ${PAPER_BANKROLL:.2f} + realized ${realized:+.2f} "
-                 f"= ${PAPER_BANKROLL + realized:.2f}")
-    lines.append(format_edge_totals(conn))
+    return format_edge_totals(conn)
 
-    return "\n".join(lines)
+
+def _edge_line(name, open_n, settled_n, realized, bankroll):
+    return (f"  {name:11s} open={open_n} settled={settled_n} realized=${realized:+.2f} "
+            f"bankroll ${bankroll:.0f} + realized ${realized:+.2f} = ${bankroll + realized:.2f}")
 
 
 def format_edge_totals(conn):
+    lines = ["=== paper PnL (all edges) ==="]
+    try:
+        w_total = conn.execute("SELECT COUNT(*) FROM fills").fetchone()[0]
+        w_settled = conn.execute(
+            "SELECT COUNT(*) FROM fills WHERE market_id IN (SELECT market_id FROM settlements)"
+        ).fetchone()[0]
+        w_realized = conn.execute(
+            "SELECT COALESCE(SUM(pnl),0) FROM settlements WHERE market_id IN (SELECT market_id FROM fills)"
+        ).fetchone()[0]
+        lines.append(_edge_line("weather", w_total - w_settled, w_settled, w_realized, PAPER_BANKROLL))
+    except sqlite3.OperationalError:
+        lines.append("  weather:     (fills table not initialized)")
+
     bank = {"flb": PAPER_BANKROLL_FLB, "arb": PAPER_BANKROLL_ARB}
     try:
         settled = {r["edge"]: (r["n"], r["pnl"]) for r in conn.execute(
@@ -84,14 +87,12 @@ def format_edge_totals(conn):
             "WHERE s.id IS NULL GROUP BY f.edge"
         ).fetchall()}
     except sqlite3.OperationalError:
-        return "=== edges (paper) ===\n  (edge tables not initialized)"
-    lines = ["=== edges (paper) ==="]
+        lines.append("  (edge tables not initialized)")
+        return "\n".join(lines)
     for edge in ("flb", "arb"):
         s_n, s_pnl = settled.get(edge, (0, 0.0))
         o_n = open_n.get(edge, 0)
-        b = bank[edge]
-        lines.append(f"  {edge}: open={o_n} settled={s_n} realized=${s_pnl:+.2f} "
-                     f"bankroll ${b:.0f} + realized ${s_pnl:+.2f} = ${b + s_pnl:.2f}")
+        lines.append(_edge_line(edge, o_n, s_n, s_pnl, bank[edge]))
     lines.append("  cross-venue: shelved (no fills)")
     return "\n".join(lines)
 
