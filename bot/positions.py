@@ -38,7 +38,7 @@ def format_report(conn):
         FROM settlements st
         WHERE st.market_id IN (SELECT market_id FROM fills)
         ORDER BY st.id DESC
-        LIMIT 50
+        LIMIT 15
         """
     ).fetchall()
     if not settled_rows:
@@ -50,7 +50,9 @@ def format_report(conn):
         lines.append(f"  {r['city']:13s} {r['date']} bucket={r['bucket_key'] or '?':12s} "
                      f"bucket_won={won}  pnl=${pnl:+.2f}  {verdict}")
     lines.append("")
+    lines.append(format_totals(conn))
 
+def format_totals(conn):
     total_fills = conn.execute("SELECT COUNT(*) FROM fills").fetchone()[0]
     open_n = conn.execute(
         "SELECT COUNT(*) FROM fills WHERE market_id NOT IN (SELECT market_id FROM settlements)"
@@ -59,7 +61,7 @@ def format_report(conn):
     realized = conn.execute(
         "SELECT COALESCE(SUM(pnl), 0) FROM settlements WHERE market_id IN (SELECT market_id FROM fills)"
     ).fetchone()[0]
-    lines.append("=== totals ===")
+    lines = ["=== totals ==="]
     lines.append(f"  open: {open_n}   settled: {settled_n}")
     lines.append(f"  realized PnL (settled): ${realized:+.2f}")
     lines.append(f"  paper bankroll: ${PAPER_BANKROLL:.2f} + realized ${realized:+.2f} "
