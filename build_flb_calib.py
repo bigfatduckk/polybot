@@ -1,4 +1,5 @@
 import argparse
+import csv
 import json
 from collections import defaultdict
 from pathlib import Path
@@ -7,11 +8,36 @@ from bot.config import BOT_DIR, FLB_CALIB_PATH, FLB_PRICE_BUCKET
 
 ZENODO_PATH = BOT_DIR / "data" / "zenodo_resolved.jsonl"
 
+
+def _iter_records(path):
+    """Yield dict records from a JSONL or CSV file (auto-detected by content)."""
+    with open(path, encoding="utf-8") as f:
+        first = ""
+        for line in f:
+            if line.strip():
+                first = line
+                break
+    is_json = first.lstrip().startswith("{")
+    if is_json:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+    else:
+        with open(path, encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                yield r
+
 FIELD_MAP = {
-    "outcome": "resolved_yes",
-    "final_price": "price_final",
-    "p24h_price": "price_24h",
-    "p7d_price": "price_7d",
+    "outcome": "resolution",
+    "final_price": "snap_final",
+    "p24h_price": "snap_24h_pre",
+    "p7d_price": "snap_7d_pre",
 }
 MIN_CELL_N = 50
 PRICE_BUCKETS = int(round(1.0 / FLB_PRICE_BUCKET))
@@ -70,31 +96,23 @@ def build(path):
     counts = {s: defaultdict(int) for s in SNAPSHOTS}
     n_markets = 0
     n_points = 0
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
+    for rec in _iter_records(path):
+        outcome = _to_outcome(_get(rec, "outcome"))
+        if outcome is None:
+            continue
+        n_markets += 1
+        for snap, logical in (("final", "final_price"),
+                              ("24h", "p24h_price"),
+                              ("7d", "p7d_price")):
+            p = _to_price(_get(rec, logical))
+            if p is None:
                 continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
+            idx = _price_idx(p)
+            if idx is None:
                 continue
-            outcome = _to_outcome(_get(rec, "outcome"))
-            if outcome is None:
-                continue
-            n_markets += 1
-            for snap, logical in (("final", "final_price"),
-                                  ("24h", "p24h_price"),
-                                  ("7d", "p7d_price")):
-                p = _to_price(_get(rec, logical))
-                if p is None:
-                    continue
-                idx = _price_idx(p)
-                if idx is None:
-                    continue
-                sums[snap][idx] += outcome
-                counts[snap][idx] += 1
-                n_points += 1
+            sums[snap][idx] += outcome
+            counts[snap][idx] += 1
+            n_points += 1
     table = {}
     for snap in SNAPSHOTS:
         table[snap] = []
@@ -117,19 +135,11 @@ def build(path):
 
 
 def inspect(path, n=1):
-    with open(path, encoding="utf-8") as f:
-        for i, line in enumerate(f):
-            if i >= n:
-                break
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            print(f"record {i} keys: {list(rec.keys())}")
-            print(json.dumps(rec, indent=2, default=str)[:800])
+    for i, rec in enumerate(_iter_records(path)):
+        if i >= n:
+            break
+        print(f"record {i} keys: {list(rec.keys())}")
+        print(json.dumps(rec, indent=2, default=str)[:800])
 
 
 def main():
