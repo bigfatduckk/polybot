@@ -18,7 +18,7 @@ import httpx
 from dotenv import load_dotenv
 
 from config import TELEGRAM_TOKEN_ENV, TELEGRAM_CHAT_ID_ENV
-from positions import _connect, format_report
+from positions import _connect, format_report, format_totals
 
 ENV_PATH = Path(__file__).resolve().parent / ".env"
 META_KEY = "telegram_last_update_id"
@@ -79,8 +79,9 @@ def main():
         text = (msg.get("text") or "").strip()
         chat_id = str(msg.get("chat", {}).get("id", ""))
         if text.lower() in ("info", "/info") and chat_id == owner_chat:
-            report = format_report(conn)
-            _send(token, owner_chat, report)
+            _send(token, owner_chat, format_report(conn))
+        elif text.lower() in ("pnl", "/pnl") and chat_id == owner_chat:
+            _send(token, owner_chat, format_totals(conn))
 
     if max_uid > last:
         _set_last_update_id(conn, max_uid)
