@@ -163,7 +163,7 @@ def _store_order(conn, order):
     cur = conn.execute(
         """INSERT INTO pm_orders(ts, edge, scan_id, market_id, token_id, side, price, size,
            maker_or_taker, edge_size, kelly_fraction, status, meta_json)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (_now_iso(), order.edge, order.meta.get("scan_id", 0), order.market_id,
          order.token_id, order.side, order.price, order.size, order.maker_or_taker,
          order.edge_size, order.kelly_fraction, "pending",
@@ -232,7 +232,7 @@ def store_candidate(edge, scan_id, c):
     conn.execute(
         """INSERT INTO pm_candidates(ts, edge, scan_id, market_id, side, p_model,
            edge_after_costs, effective_price, lead_hours, horizon_days, meta_json)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
         (_now_iso(), edge, scan_id, c["market_id"], c["side"], c["p_model"],
          c["edge_after_costs"], c["effective_price"], c.get("lead_hours", 0.0),
          c.get("horizon_days", 0.0), json.dumps(c.get("meta", {}), default=str)),
