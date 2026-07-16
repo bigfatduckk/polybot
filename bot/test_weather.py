@@ -123,3 +123,10 @@ def test_station_bias_zero_when_insufficient():
 def test_station_bias_uses_only_last_20():
     residuals = [10.0] * 30 + [2.0] * 20
     assert abs(w.station_bias(residuals) - 2.0) < 1e-9
+
+
+def test_station_bias_gated_below_threshold():
+    assert w.station_bias([0.1] * 25) == 0.0
+    assert w.station_bias([0.29] * 25) == 0.0
+    assert abs(w.station_bias([0.30] * 25) - 0.30) < 1e-9
+    assert abs(w.station_bias([-0.40] * 25) + 0.40) < 1e-9

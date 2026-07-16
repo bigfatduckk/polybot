@@ -10,6 +10,7 @@ from config import (
     MODEL_COL_SUFFIX,
     MODELS,
     OPEN_METEO_ENSEMBLE,
+    STATION_BIAS_MIN,
     tls_verify,
 )
 
@@ -169,4 +170,7 @@ def station_bias(residuals):
     if len(residuals) < 5:
         return 0.0
     last = residuals[-20:]
-    return sum(last) / len(last)
+    b = sum(last) / len(last)
+    if abs(b) < STATION_BIAS_MIN:
+        return 0.0
+    return b
