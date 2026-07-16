@@ -216,7 +216,7 @@ def store_snapshot(edge, m, meta=None):
            end_date, best_bid, best_ask, bid_size, ask_size, depth, tick_size,
            min_order_size, fee_rate, fees_enabled, neg_risk, liquidity, last_trade_price,
            yes_token_id, no_token_id, meta_json, snapshot_json)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (_now_iso(), edge, m.market_id, m.event_id, m.condition_id, m.question, m.end_date,
          m.best_bid, m.best_ask, m.bid_size, m.ask_size, m.depth, m.tick_size,
          m.min_order_size, m.fee_rate, int(m.fees_enabled), int(m.neg_risk),
