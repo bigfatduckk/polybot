@@ -163,6 +163,43 @@ def test_parse_book_empty_book_defaults():
     assert depth == 0.0 and last == 0.5
 
 
+def test_pending_markets_pulls_condition_id_from_snapshots():
+    import os
+    import sqlite3
+    import tempfile
+    import markets
+    import settle
+    tmp = tempfile.mkdtemp()
+    db = os.path.join(tmp, "t.sqlite")
+    old_m, old_s = markets.DB_PATH, settle.DB_PATH
+    markets.DB_PATH = db
+    settle.DB_PATH = db
+    try:
+        markets.init_edge_db()
+        conn = sqlite3.connect(db)
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            "INSERT INTO pm_fills(ts, edge, order_id, market_id, token_id, side, "
+            "price, size, maker_or_taker, fill_ts, pnl, meta_json) "
+            "VALUES('t','flb',1,'m1','tok','buy',0.3,10,'maker','t',0,'{}')"
+        )
+        conn.execute(
+            "INSERT INTO pm_snapshots(ts, edge, market_id, condition_id, question) "
+            "VALUES('t','flb','m1','cond-xyz','q')"
+        )
+        conn.commit()
+        rows = settle._pending_markets(conn, "flb")
+        assert len(rows) == 1
+        assert rows[0]["market_id"] == "m1"
+        assert rows[0]["condition_id"] == "cond-xyz"
+        conn.close()
+    finally:
+        markets.DB_PATH = old_m
+        settle.DB_PATH = old_s
+        import shutil
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_fill_pnl_buy_yes_wins_and_loses():
     assert abs(settle._fill_pnl("buy", 0.30, 100, True) - 70.0) < 1e-9
     assert abs(settle._fill_pnl("buy", 0.30, 100, False) - (-30.0)) < 1e-9

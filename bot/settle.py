@@ -20,11 +20,15 @@ def _fill_pnl(side, price, size, yes_won):
 
 def _pending_markets(conn, edge):
     rows = conn.execute(
-        """SELECT DISTINCT f.market_id, f.condition_id
+        """SELECT DISTINCT f.market_id,
+           (SELECT snap.condition_id FROM pm_snapshots snap
+            WHERE snap.market_id = f.market_id
+              AND snap.condition_id IS NOT NULL AND snap.condition_id != ''
+            ORDER BY snap.id DESC LIMIT 1) AS condition_id
            FROM pm_fills f
-           LEFT JOIN pm_settlements s
-             ON s.market_id = f.market_id AND s.edge = f.edge
-           WHERE f.edge = ? AND s.id IS NULL""",
+           LEFT JOIN pm_settlements st
+             ON st.market_id = f.market_id AND st.edge = f.edge
+           WHERE f.edge = ? AND st.id IS NULL""",
         (edge,),
     ).fetchall()
     return rows
