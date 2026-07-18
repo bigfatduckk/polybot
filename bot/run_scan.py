@@ -12,7 +12,7 @@ import edge_engine
 import markets
 import settle
 import weather as w
-from edges import arb, crossvenue, flb
+from edges import arb, crossvenue, flb, usud
 from config import CITIES, DB_PATH, HALT_FILE
 
 ENV_PATH = Path(__file__).resolve().parent / ".env"
@@ -88,7 +88,7 @@ def job_maintain():
 def job_settle():
     engine.init_db()
     settled = 0
-    for edge in ("flb", "arb"):
+    for edge in ("flb", "arb", "usud"):
         settled += settle.sweep_resolutions(edge)
     msg = f"settle: settled={settled}"
     engine.notify(msg)
@@ -165,10 +165,30 @@ def job_crossvenue():
     engine.log({"job": "crossvenue", "note": msg, "gaps": len(gaps)})
 
 
+def job_usud():
+    if os.path.exists(_halt_path()):
+        engine.notify("[HALT] usud scan skipped")
+        return
+    markets.init_edge_db()
+    scan_id = edge_engine.new_scan_id("usud")
+    cands = usud.scan_usud(scan_id)
+    state = edge_engine.load_edge_state("usud")
+    orders = edge_engine.edge_propose(cands, state)
+    fills = 0
+    for o in orders:
+        verdict = edge_engine.edge_risk_check(o, state)
+        if edge_engine.edge_execute(o, verdict) is not None:
+            fills += 1
+            state.open_markets.add(o.market_id)
+    msg = f"usud scan: cands={len(cands)} orders={len(orders)} fills={fills}"
+    engine.notify(msg)
+    engine.log({"job": "usud", "note": msg, "fills": fills})
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--job", required=True,
-                    choices=["weather", "maintain", "settle", "flb", "arb", "crossvenue"])
+                    choices=["weather", "maintain", "settle", "flb", "arb", "crossvenue", "usud"])
     ap.add_argument("--mode", default="paper", choices=["paper", "real"])
     args = ap.parse_args()
     load_dotenv(ENV_PATH)
@@ -185,6 +205,8 @@ def main():
             job_arb()
         elif args.job == "crossvenue":
             job_crossvenue()
+        elif args.job == "usud":
+            job_usud()
         else:
             job_maintain()
     except Exception:

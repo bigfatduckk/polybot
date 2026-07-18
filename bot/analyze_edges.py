@@ -156,15 +156,73 @@ def _cv_gate(stats):
     print("  go/no-go: review persistence + simulated post-hoc ROI (manual, needs resolution data)")
 
 
+def _usud_signals(conn):
+    rows = conn.execute(
+        """SELECT c.p_model, c.effective_price, c.side, c.market_id, c.ts, c.meta_json,
+                  st.resolved_yes AS outcome, st.pnl
+           FROM pm_candidates c
+           LEFT JOIN pm_settlements st ON st.market_id = c.market_id AND st.edge = 'usud'
+           WHERE c.edge = 'usud' AND st.resolved_yes IS NOT NULL"""
+    ).fetchall()
+    return [{"p": r["p_model"], "price": r["effective_price"], "side": r["side"],
+             "outcome": 1 if r["outcome"] else 0, "pnl": r["pnl"] or 0.0} for r in rows]
+
+
+def _usud_section(conn):
+    sigs = _usud_signals(conn)
+    print(f"USUD resolved signals: {len(sigs)}")
+    if not sigs:
+        print("  insufficient data")
+        return None
+    deciles = [(0.0, 0.1), (0.1, 0.3), (0.3, 0.5), (0.5, 0.7), (0.7, 0.9), (0.9, 1.01)]
+    print("Reliability by model_p bucket (n>=10):")
+    maxdev = 0.0
+    for lo, hi in deciles:
+        grp = [s for s in sigs if lo <= s["p"] < hi]
+        if len(grp) < 10:
+            continue
+        mean_p = sum(s["p"] for s in grp) / len(grp)
+        freq = sum(s["outcome"] for s in grp) / len(grp)
+        dev = abs(mean_p - freq)
+        maxdev = max(maxdev, dev)
+        print(f"  [{lo:.2f},{hi:.2f}) n={len(grp):4d} mean_p={mean_p:.3f} freq={freq:.3f} dev={dev*100:.1f}pp")
+    pnls = [s["pnl"] for s in sigs]
+    p, lo, hi = _bootstrap_ci(pnls)
+    brier_model = sum((s["p"] - s["outcome"]) ** 2 for s in sigs) / len(sigs)
+    brier_market = sum((s["price"] - s["outcome"]) ** 2 for s in sigs) / len(sigs)
+    print(f"  Brier: model={brier_model:.4f}  market={brier_market:.4f}  diff={brier_market-brier_model:+.4f}")
+    print(f"  mean realized PnL/signal = {_fmt(p, lo, hi)}")
+    print(f"  max reliability deviation = {maxdev*100:.1f}pp")
+    return len(sigs), maxdev, (p, lo, hi), brier_market - brier_model
+
+
+def _usud_gate(stats):
+    print("USUD gate:")
+    if not stats:
+        print("  FAIL (no data)")
+        return
+    n, maxdev, pnl, brier_diff = stats
+    g1 = n >= 200
+    g2 = maxdev is not None and maxdev <= 0.10
+    g3 = pnl is not None and pnl[0] is not None and pnl[0] > 0 and pnl[1] > 0
+    g4 = brier_diff is not None and brier_diff > 0
+    print(f"  >=200 resolved signals: {'PASS' if g1 else 'FAIL'} (n={n})")
+    print(f"  max reliability deviation <=10pp: {'PASS' if g2 else 'FAIL'} ({maxdev*100:.1f}pp)" if maxdev is not None else "  reliability: FAIL")
+    print(f"  net PnL>0, CI excludes 0: {'PASS' if g3 else 'FAIL'} ({_fmt(*pnl)})")
+    print(f"  Brier model < market: {'PASS' if g4 else 'FAIL'} (diff={brier_diff:+.4f})")
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--edge", required=True, choices=["flb", "arb", "crossvenue"])
+    ap.add_argument("--edge", required=True, choices=["flb", "arb", "crossvenue", "usud"])
     args = ap.parse_args()
     conn = _connect()
     if args.edge == "flb":
         _flb_gate(_flb_section(conn))
     elif args.edge == "arb":
         _arb_gate(_arb_section(conn))
+    elif args.edge == "usud":
+        _usud_gate(_usud_section(conn))
     else:
         _cv_gate(_cv_section(conn))
     conn.close()

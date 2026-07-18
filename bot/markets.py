@@ -210,6 +210,14 @@ def init_edge_db():
             kalshi_market_id TEXT, question TEXT, pm_yes REAL, kalshi_yes REAL,
             gap REAL, net_of_fees REAL, snapshot_json TEXT
         );
+        CREATE TABLE IF NOT EXISTS usud_quotes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, scan_id INTEGER,
+            market_id TEXT, ticker TEXT, question TEXT, end_date TEXT,
+            market_ask REAL, market_bid REAL, best_bid REAL, best_ask REAL, depth REAL,
+            p_model REAL, spot REAL, iv REAL, prior_close REAL, tau_years REAL,
+            buy_edge REAL, sell_edge REAL
+        );
+        CREATE INDEX IF NOT EXISTS idx_usud_quotes_mkt ON usud_quotes(market_id);
         CREATE INDEX IF NOT EXISTS idx_pm_snaps_market ON pm_snapshots(market_id);
         CREATE INDEX IF NOT EXISTS idx_pm_orders_status ON pm_orders(status);
         CREATE INDEX IF NOT EXISTS idx_pm_fills_edge_mkt ON pm_fills(edge, market_id);

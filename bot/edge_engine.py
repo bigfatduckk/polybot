@@ -12,6 +12,7 @@ from config import (
     MIN_EDGE,
     PAPER_BANKROLL_FLB,
     PAPER_BANKROLL_ARB,
+    PAPER_BANKROLL_USUD,
     PER_TRADE_CAP_ABS,
     PER_TRADE_CAP_FRAC,
     PRICE_BAND,
@@ -19,7 +20,7 @@ from config import (
 
 MODE = "paper"
 
-BANKROLLS = {"flb": PAPER_BANKROLL_FLB, "arb": PAPER_BANKROLL_ARB}
+BANKROLLS = {"flb": PAPER_BANKROLL_FLB, "arb": PAPER_BANKROLL_ARB, "usud": PAPER_BANKROLL_USUD}
 
 
 def set_mode(m):

@@ -1,6 +1,12 @@
 import sqlite3
 
-from config import DB_PATH, PAPER_BANKROLL, PAPER_BANKROLL_FLB, PAPER_BANKROLL_ARB
+from config import (
+    DB_PATH,
+    PAPER_BANKROLL,
+    PAPER_BANKROLL_ARB,
+    PAPER_BANKROLL_FLB,
+    PAPER_BANKROLL_USUD,
+)
 
 
 def _connect():
@@ -75,7 +81,7 @@ def format_edge_totals(conn):
     except sqlite3.OperationalError:
         lines.append("  weather:     (fills table not initialized)")
 
-    bank = {"flb": PAPER_BANKROLL_FLB, "arb": PAPER_BANKROLL_ARB}
+    bank = {"flb": PAPER_BANKROLL_FLB, "arb": PAPER_BANKROLL_ARB, "usud": PAPER_BANKROLL_USUD}
     try:
         settled = {r["edge"]: (r["n"], r["pnl"]) for r in conn.execute(
             "SELECT edge, COUNT(*) AS n, COALESCE(SUM(pnl),0) AS pnl "
@@ -89,7 +95,7 @@ def format_edge_totals(conn):
     except sqlite3.OperationalError:
         lines.append("  (edge tables not initialized)")
         return "\n".join(lines)
-    for edge in ("flb", "arb"):
+    for edge in ("flb", "arb", "usud"):
         s_n, s_pnl = settled.get(edge, (0, 0.0))
         o_n = open_n.get(edge, 0)
         lines.append(_edge_line(edge, o_n, s_n, s_pnl, bank[edge]))

@@ -1,7 +1,7 @@
 import markets
 import settle
 from datetime import datetime, timedelta, timezone
-from edges import arb, crossvenue, flb
+from edges import arb, crossvenue, flb, usud
 
 
 def _arb_market(mid, best_bid, best_ask, size=100, neg_risk=True):
@@ -255,3 +255,92 @@ def test_cv_best_match_filters_below_threshold():
     assert best is not None
     assert best["market_name"] == "FED-26SEP"
     assert crossvenue._best_match("BTC above 100k", k)[0] is None
+
+
+def _usud_market(best_bid, best_ask, size=1000, token="t1"):
+    return markets.Market(
+        market_id="m1", condition_id="c1", event_id="e1", event_slug="s",
+        question="SPY Up or Down on July 13, 2026", end_date=_iso_future(0.04),
+        best_bid=best_bid, best_ask=best_ask, bid_size=size, ask_size=size,
+        depth=size * 2, tick_size=0.01, min_order_size=5.0, fee_rate=0.0,
+        fees_enabled=False, neg_risk=False, liquidity=10000.0,
+        last_trade_price=(best_bid + best_ask) / 2, yes_token_id=token,
+        no_token_id="t0", ts="",
+        bids=[{"price": best_bid, "size": size}],
+        asks=[{"price": best_ask, "size": size}], raw={},
+    )
+
+
+def _quote(spot, prior_close, iv=0.20, tau=0.1, ticker="SPY"):
+    return {"spot": spot, "iv": iv, "prior_close": prior_close,
+            "tau_years": tau, "r": 0.0, "ticker": ticker}
+
+
+def test_usud_prob_above_atm_below_half_due_to_lognormal_drift():
+    p = usud.prob_above(100.0, 100.0, 0.30, 1.0, 0.0)
+    assert 0.40 < p < 0.50
+
+
+def test_usud_prob_above_known_value():
+    p = usud.prob_above(100.0, 100.0, 0.30, 1.0, 0.0)
+    assert abs(p - 0.4404) < 1e-3
+
+
+def test_usud_prob_above_deep_itm_approaches_one():
+    p = usud.prob_above(200.0, 100.0, 0.30, 0.1, 0.0)
+    assert p > 0.999
+
+
+def test_usud_prob_above_deep_otm_approaches_zero():
+    p = usud.prob_above(90.0, 100.0, 0.20, 0.1, 0.0)
+    assert p < 0.06
+
+
+def test_usud_prob_above_zero_sigma_is_step_function():
+    assert usud.prob_above(110.0, 100.0, 0.0, 0.1) == 1.0
+    assert usud.prob_above(90.0, 100.0, 0.0, 0.1) == 0.0
+
+
+def test_usud_ticker_from_question():
+    assert usud._ticker_from_question("SPY Up or Down on July 13, 2026") == ("SPY", "SPY")
+    assert usud._ticker_from_question("S&P 500 (SPX) up or down?") == ("SPX", "^GSPC")
+    assert usud._ticker_from_question("NVDA Up or Down on July 14") == ("NVDA", "NVDA")
+    assert usud._ticker_from_question("Dow Jones DJIA close") == ("DJIA", "^DJI")
+    assert usud._ticker_from_question("BTC above 100k") == (None, None)
+
+
+def test_usud_compute_candidate_buy_signal_when_model_above_market():
+    m = _usud_market(0.68, 0.70)
+    c = usud.compute_candidate(m, _quote(110.0, 100.0))
+    assert c is not None
+    assert c["side"] == "buy"
+    assert c["p_model"] > 0.85
+    assert c["edge_after_costs"] > 0.05
+    assert abs(c["effective_price"] - 0.70) < 1e-9
+
+
+def test_usud_compute_candidate_sell_signal_when_model_below_market():
+    m = _usud_market(0.30, 0.32)
+    c = usud.compute_candidate(m, _quote(90.0, 100.0))
+    assert c is not None
+    assert c["side"] == "sell"
+    assert c["p_model"] < 0.06
+    assert c["edge_after_costs"] > 0.05
+    assert abs(c["effective_price"] - 0.30) < 1e-9
+
+
+def test_usud_compute_candidate_no_signal_when_well_priced():
+    m = _usud_market(0.92, 0.94)
+    assert usud.compute_candidate(m, _quote(110.0, 100.0)) is None
+
+
+def test_usud_compute_candidate_rejects_thin_depth():
+    m = _usud_market(0.68, 0.70, size=100)
+    assert usud.compute_candidate(m, _quote(110.0, 100.0)) is None
+
+
+def test_usud_compute_candidate_rejects_bad_quote():
+    m = _usud_market(0.68, 0.70)
+    assert usud.compute_candidate(m, {"spot": 0, "iv": 0.2, "prior_close": 100, "tau_years": 0.1}) is None
+    assert usud.compute_candidate(m, {"spot": 110, "iv": 0.0, "prior_close": 100, "tau_years": 0.1}) is None
+    assert usud.compute_candidate(m, {"spot": 110, "iv": 0.2, "prior_close": 100, "tau_years": 0.0}) is None
