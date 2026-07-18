@@ -92,6 +92,11 @@ CLIM_WINDOW_DAYS = 7
 CLIM_YEARS = (2016, 2025)
 CLIM_HIST_PATH = str(BOT_DIR / "data" / "clim_hist.json")
 
+# Snapshot retention. analyze.py reads market_mid from candidates (not
+# snapshots), so old snapshots are dead weight past the settlement window.
+# 14d covers Open-Meteo Archive's ~5d observed-high lag + settlement retry.
+CULL_SNAP_DAYS = 14
+
 TELEGRAM_TOKEN_ENV = "TELEGRAM_TOKEN"
 TELEGRAM_CHAT_ID_ENV = "TELEGRAM_CHAT_ID"
 

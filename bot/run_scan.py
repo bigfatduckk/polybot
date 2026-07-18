@@ -79,8 +79,10 @@ def job_maintain():
     engine.log_reward_snapshot(snapshots)
     halted = engine.halt_check()
     engine.daily_pnl_pulse_if_due()
+    culled = engine.cull_if_due()
     msg = (f"maintain: settled={settled} snaps={len(snapshots)} "
-           f"halted={'yes' if halted else 'no'}")
+           f"halted={'yes' if halted else 'no'}"
+           + (f" culled={culled}" if culled else ""))
     engine.notify(msg)
     engine.log({"job": "maintain", "note": msg, "settled": settled})
 

@@ -16,6 +16,7 @@ from config import (
     CLIM_ALPHA,
     CLIM_ENABLED,
     CLOB_BASE,
+    CULL_SNAP_DAYS,
     CONSECUTIVE_LOSS_HALT,
     DAILY_LOSS_HALT_FRAC,
     DAILY_PULSE_HOUR_HKT,
@@ -191,7 +192,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, scan_id INTEGER, market_id TEXT,
             condition_id TEXT, side TEXT, p_model REAL, p_by_model_json TEXT,
             edge_after_costs REAL, lead_hours REAL, run_ids TEXT, bucket_key TEXT,
-            effective_price REAL, blend_mean REAL, snapshot_json TEXT
+            effective_price REAL, blend_mean REAL, market_mid REAL, snapshot_json TEXT
         );
         CREATE TABLE IF NOT EXISTS orders (
             id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, scan_id INTEGER, market_id TEXT,
@@ -492,15 +493,16 @@ def _new_scan(conn, job):
 
 
 def _store_candidate(conn, scan_id, c):
+    market_mid = (c.snapshot.best_bid + c.snapshot.best_ask) / 2.0
     conn.execute(
         """INSERT INTO candidates(ts, scan_id, market_id, condition_id, side, p_model,
            p_by_model_json, edge_after_costs, lead_hours, run_ids, bucket_key,
-           effective_price, blend_mean, snapshot_json)
-           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           effective_price, blend_mean, market_mid, snapshot_json)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (now_iso(), scan_id, c.snapshot.market_id, c.snapshot.condition_id, c.side,
          c.p_model, json.dumps(c.p_by_model, default=str), c.edge_after_costs,
          c.lead_hours, c.run_ids, c.snapshot.bucket.key, c.effective_price,
-         c.blend_mean, json.dumps(c.raw, default=str)),
+         c.blend_mean, market_mid, json.dumps(c.raw, default=str)),
     )
 
 
@@ -898,3 +900,25 @@ def daily_pnl_pulse_if_due():
     conn.commit()
     conn.close()
     notify(f"[PnL pulse {today_str} HKT] fills={n} settled={nset} total_pnl={total:.2f}")
+
+
+def cull_if_due():
+    # analyze.py reads market_mid from candidates (not snapshots), so old
+    # snapshots are dead weight past settlement+archive-lag. Daily, meta-keyed.
+    # DELETE reuses free pages (auto_vacuum=0) so the file stops growing without
+    # a VACUUM. ponytail: no VACUUM — risky on 1GB RAM, deferred.
+    from datetime import timedelta
+    conn = get_db()
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    last = meta_get(conn, "last_cull_date", "")
+    if last == today:
+        conn.close()
+        return 0
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=CULL_SNAP_DAYS)).isoformat(timespec="seconds")
+    cur = conn.execute("DELETE FROM snapshots WHERE ts < ?", (cutoff,))
+    deleted = cur.rowcount
+    meta_set(conn, "last_cull_date", today)
+    conn.commit()
+    conn.close()
+    notify(f"snapshot cull: deleted {deleted} rows older than {CULL_SNAP_DAYS}d (cutoff {cutoff})")
+    return deleted

@@ -38,13 +38,9 @@ def _fmt_ci(point, lo, hi):
 def _resolved_signals(conn):
     rows = conn.execute(
         """SELECT c.p_model, c.ts AS cts, c.market_id, c.effective_price,
-                  c.bucket_key,
-                  (s.best_bid + s.best_ask)/2.0 AS market_mid,
+                  c.bucket_key, c.market_mid,
                   st.resolved_yes AS outcome, st.date AS sdate
            FROM candidates c
-           LEFT JOIN snapshots s
-             ON s.market_id = c.market_id
-            AND substr(s.ts,1,16) = substr(c.ts,1,16)
            LEFT JOIN settlements st ON st.market_id = c.market_id
            WHERE st.resolved_yes IS NOT NULL"""
     ).fetchall()
