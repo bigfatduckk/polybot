@@ -316,6 +316,24 @@ def test_usud_slug_for_format():
     assert usud._slug_for("djia", dt.date(2026, 12, 1)) == "djia-up-or-down-on-december-1-2026"
 
 
+def test_usud_realized_vol_flat_prices_zero():
+    assert usud._realized_vol([100, 100, 100, 100, 100, 100, 100]) is None
+
+
+def test_usud_realized_vol_varying_prices_positive_and_sane():
+    closes = [100.0]
+    for d in (0.2, -0.15, 0.3, -0.1, 0.25, -0.2, 0.15, -0.3, 0.1, 0.2, -0.25, 0.3, -0.15):
+        closes.append(closes[-1] + d)
+    iv = usud._realized_vol(closes)
+    assert iv is not None and iv > 0.0
+    assert iv < 2.0
+
+
+def test_usud_realized_vol_too_few_bars_none():
+    assert usud._realized_vol([100, 101, 102]) is None
+    assert usud._realized_vol(None) is None
+
+
 def test_usud_compute_candidate_buy_signal_when_model_above_market():
     m = _usud_market(0.68, 0.70)
     c = usud.compute_candidate(m, _quote(110.0, 100.0))

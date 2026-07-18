@@ -158,36 +158,48 @@ def _tau_to_close(end_date):
     return secs / (365.0 * 24.0 * 3600.0) if secs > 0 else 0.0
 
 
-def _atm_iv(t, spot):
-    exps = getattr(t, "options", None) or ()
-    if not exps or not spot:
+CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart"
+_UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+
+
+def _realized_vol(closes):
+    closes = [c for c in (closes or []) if c is not None and c > 0.0]
+    if len(closes) < 6:
         return None
-    try:
-        chain = t.option_chain(exps[0])
-    except Exception:
+    logs = []
+    for i in range(1, len(closes)):
+        if closes[i - 1] > 0.0:
+            logs.append(math.log(closes[i] / closes[i - 1]))
+    if len(logs) < 5:
         return None
-    calls = getattr(chain, "calls", None)
-    if calls is None or len(calls) == 0 or "strike" not in calls or "impliedVolatility" not in calls:
+    mean = sum(logs) / len(logs)
+    var = sum((x - mean) ** 2 for x in logs) / (len(logs) - 1)
+    if var <= 0.0:
         return None
-    row = calls.iloc[(calls["strike"] - spot).abs().argmin()]
-    iv = float(row.get("impliedVolatility") or 0.0)
-    return iv if iv > 0.0 else None
+    bars_per_year = 252.0 * 78.0
+    return math.sqrt(var) * math.sqrt(bars_per_year)
 
 
 def _fetch_quote(yf_sym, m):
     try:
-        import yfinance as yf
-    except ImportError:
-        return None
-    try:
-        t = yf.Ticker(yf_sym)
-        info = t.fast_info
-        spot = float(info.get("last_price") or info.get("previous_close") or 0.0)
-        prior = float(info.get("previous_close") or 0.0)
+        import httpx
+        with httpx.Client(timeout=20, headers=_UA) as c:
+            r = c.get(CHART_URL + "/" + yf_sym,
+                      params={"interval": "5m", "range": "1d"})
+        if r.status_code != 200:
+            return None
+        result = r.json().get("chart", {}).get("result") or []
+        if not result:
+            return None
+        meta = result[0].get("meta") or {}
+        spot = float(meta.get("regularMarketPrice") or 0.0)
+        prior = float(meta.get("chartPreviousClose") or meta.get("previousClose") or 0.0)
         if spot <= 0.0 or prior <= 0.0:
             return None
-        iv = _atm_iv(t, spot)
-        if iv is None:
+        quote_list = (result[0].get("indicators") or {}).get("quote") or []
+        closes = quote_list[0].get("close") if quote_list else None
+        iv = _realized_vol(closes)
+        if iv is None or iv <= 0.0:
             return None
         tau = _tau_to_close(m.end_date)
         if tau <= 0.0:
