@@ -23,7 +23,7 @@ from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 
-from config import TELEGRAM_TOKEN_ENV, TELEGRAM_CHAT_ID_ENV
+from config import TELEGRAM_TOKEN_ENV, TELEGRAM_CHAT_ID_ENV, INST_TAG
 from positions import (
     _connect,
     format_report,
@@ -52,6 +52,8 @@ def _set_last_update_id(conn, uid):
 
 
 def _send(token, chat_id, text):
+    if not text.startswith("["):
+        text = f"[{INST_TAG}] {text}"
     if len(text) > 4000:
         text = text[:3990] + "\n...[truncated]"
     try:

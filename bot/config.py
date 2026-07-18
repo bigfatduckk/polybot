@@ -72,8 +72,25 @@ MAX_POSITIONS_PER_REGION_DAY = 3
 PRICE_BAND = (0.03, 0.97)
 PAPER_BANKROLL = 1000.0
 
-DB_PATH = str(BOT_DIR / "polymarket_bot.db")
-HALT_FILE = str(BOT_DIR / "HALT")
+# A/B instance switch. BOT_INSTANCE=B forks the weather bot into a separate
+# paper DB/HALT (Bot B = climatology blend; A = current baseline). One codebase,
+# config-driven — not a cp -r. B crons weather+maintain only (weather A/B).
+BOT_INSTANCE = os.environ.get("BOT_INSTANCE", "A").upper()
+_B = BOT_INSTANCE == "B"
+INST_TAG = "B" if _B else "A"
+DB_PATH = str(BOT_DIR / ("polymarket_bot_B.db" if _B else "polymarket_bot.db"))
+HALT_FILE = str(BOT_DIR / ("HALT_B" if _B else "HALT"))
+
+# Climatology blend (Bot B only). Linear pool: p=(1-α)*p_model + α*p_clim.
+# p_clim = historical fraction of daily-highs (±CLIM_WINDOW_DAYS around the
+# target calendar date, over CLIM_YEARS recent years) falling in each bucket.
+# Recent-decade window embeds the warming trend (no detrend needed). α tunable
+# during IS (07-19→07-25), frozen 07-26.
+CLIM_ENABLED = _B
+CLIM_ALPHA = 0.30
+CLIM_WINDOW_DAYS = 7
+CLIM_YEARS = (2016, 2025)
+CLIM_HIST_PATH = str(BOT_DIR / "data" / "clim_hist.json")
 
 TELEGRAM_TOKEN_ENV = "TELEGRAM_TOKEN"
 TELEGRAM_CHAT_ID_ENV = "TELEGRAM_CHAT_ID"

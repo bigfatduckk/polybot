@@ -10,14 +10,18 @@ import httpx
 import markets
 import weather as w
 from calib import calibrate_p, load_calib
+from climatology import clim_probs, blend_clim
 from config import (
     CITIES,
+    CLIM_ALPHA,
+    CLIM_ENABLED,
     CLOB_BASE,
     CONSECUTIVE_LOSS_HALT,
     DAILY_LOSS_HALT_FRAC,
     DAILY_PULSE_HOUR_HKT,
     DB_PATH,
     GAMMA_BASE,
+    INST_TAG,
     MAX_LEAD_HOURS,
     MAX_POSITIONS_PER_REGION_DAY,
     MIN_EDGE,
@@ -251,6 +255,8 @@ def notify(text):
     chat = os.environ.get(TELEGRAM_CHAT_ID_ENV)
     if not token or not chat:
         return
+    if not text.startswith("["):
+        text = f"[{INST_TAG}] {text}"
     try:
         from telegram import Bot
         bot = Bot(token=token)
@@ -426,6 +432,7 @@ def scan_weather(runs, snapshots):
         for run in city_runs:
             probs_by_model[run.model] = w.daily_high_probs(run, mdate, buckets, bias)
         blended = w.blend(probs_by_model, MODELS)
+        clim = clim_probs(city, mdate, buckets) if CLIM_ENABLED else {}
         means = {}
         for run in city_runs:
             mem = run.daily_high_by_date.get(mdate, [])
@@ -435,7 +442,9 @@ def scan_weather(runs, snapshots):
         blend_mean = sum(MODELS.get(m, 0) * v for m, v in means.items()) / wsum
         run_ids = ",".join(r.content_hash for r in city_runs)
         for s in group:
-            p = blended.get(s.bucket.key, 0.0)
+            p_blend = blended.get(s.bucket.key, 0.0)
+            p_clim = clim.get(s.bucket.key) if CLIM_ENABLED else None
+            p = blend_clim(p_blend, p_clim, CLIM_ALPHA)
             p = calibrate_p(p, _WEATHER_CALIB)
             lead = _lead_hours(s.end_date)
             if lead > MAX_LEAD_HOURS:
@@ -462,7 +471,9 @@ def scan_weather(runs, snapshots):
                 edge_after_costs=edge, lead_hours=lead, run_ids=run_ids,
                 effective_price=eff, blend_mean=blend_mean,
                 raw={"probs_by_model": probs_by_model, "blended": blended,
-                     "bias": bias, "blend_mean": blend_mean},
+                     "bias": bias, "blend_mean": blend_mean,
+                     "p_model_blend": p_blend, "p_clim": p_clim,
+                     "alpha": CLIM_ALPHA if CLIM_ENABLED else 0.0},
             ))
     for c in cands:
         _store_candidate(conn, scan_id, c)
