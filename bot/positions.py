@@ -57,6 +57,7 @@ def format_report(conn):
                      f"bucket_won={won}  pnl=${pnl:+.2f}  {verdict}")
     lines.append("")
     lines.append(format_totals(conn))
+    return "\n".join(lines)
 
 def format_totals(conn):
     return format_edge_totals(conn)
