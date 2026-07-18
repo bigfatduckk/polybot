@@ -17,14 +17,6 @@ from engine import _walk_book
 
 EDGE = "usud"
 
-TICKER_MAP = {
-    "SPY": "SPY",
-    "SPX": "^GSPC",
-    "DJIA": "^DJI",
-    "NVDA": "NVDA",
-    "TSLA": "TSLA",
-}
-
 
 def _norm_cdf(x):
     return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
@@ -38,13 +30,16 @@ def prob_above(spot, strike, sigma, tau, r=0.0):
 
 
 def _ticker_from_question(q):
-    u = (q or "").upper()
-    for tok, sym in TICKER_MAP.items():
-        if tok in u:
-            return tok, sym
-    if "S&P 500" in u or "S&P500" in u:
+    u = (q or "").upper().strip()
+    if u.startswith("SPY "):
+        return "SPY", "SPY"
+    if u.startswith("NVDA "):
+        return "NVDA", "NVDA"
+    if u.startswith("TSLA ") or u.startswith("TESLA "):
+        return "TSLA", "TSLA"
+    if u.startswith("S&P 500") or u.startswith("S&P500"):
         return "SPX", "^GSPC"
-    if "DOW JONES" in u or "DOW" in u:
+    if u.startswith("DOW JONES") or u.startswith("DJIA"):
         return "DJIA", "^DJI"
     return None, None
 

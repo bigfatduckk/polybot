@@ -305,8 +305,18 @@ def test_usud_ticker_from_question():
     assert usud._ticker_from_question("SPY Up or Down on July 13, 2026") == ("SPY", "SPY")
     assert usud._ticker_from_question("S&P 500 (SPX) up or down?") == ("SPX", "^GSPC")
     assert usud._ticker_from_question("NVDA Up or Down on July 14") == ("NVDA", "NVDA")
-    assert usud._ticker_from_question("Dow Jones DJIA close") == ("DJIA", "^DJI")
+    assert usud._ticker_from_question("Dow Jones (DJIA) Up or Down on July 13") == ("DJIA", "^DJI")
+    assert usud._ticker_from_question("Tesla (TSLA) Up or Down on July 14") == ("TSLA", "TSLA")
     assert usud._ticker_from_question("BTC above 100k") == (None, None)
+
+
+def test_usud_ticker_rejects_crypto_up_or_down_markets():
+    # regression: "DOW" substring inside "DOWN" used to match every crypto
+    # 5-minute "Up or Down" market as DJIA. Leading-token match must reject them.
+    assert usud._ticker_from_question("Bitcoin Up or Down - July 18, 1:15AM-1:20AM ET") == (None, None)
+    assert usud._ticker_from_question("Ethereum Up or Down - July 18, 1:20AM-1:25AM ET") == (None, None)
+    assert usud._ticker_from_question("Hyperliquid Up or Down - July 18, 1:15AM-1:20AM ET") == (None, None)
+    assert usud._ticker_from_question("Dogecoin Up or Down - July 18, 1:15AM-1:20AM ET") == (None, None)
 
 
 def test_usud_compute_candidate_buy_signal_when_model_above_market():
