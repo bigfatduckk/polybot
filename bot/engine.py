@@ -9,6 +9,7 @@ import httpx
 
 import markets
 import weather as w
+from calib import calibrate_p, load_calib
 from config import (
     CITIES,
     CLOB_BASE,
@@ -28,11 +29,16 @@ from config import (
     PRICE_BAND,
     TELEGRAM_CHAT_ID_ENV,
     TELEGRAM_TOKEN_ENV,
+    WEATHER_CALIB_PATH,
     WEATHER_EVENT_TITLE_RE,
     tls_verify,
 )
 
 MODE = "paper"
+
+# Frozen reliability recalibration (Platt). None until build_weather_calib.py
+# writes data/weather_calib.json; falls back to identity (p unchanged).
+_WEATHER_CALIB = load_calib(WEATHER_CALIB_PATH)
 
 MONTHS = {
     "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
@@ -430,6 +436,7 @@ def scan_weather(runs, snapshots):
         run_ids = ",".join(r.content_hash for r in city_runs)
         for s in group:
             p = blended.get(s.bucket.key, 0.0)
+            p = calibrate_p(p, _WEATHER_CALIB)
             lead = _lead_hours(s.end_date)
             if lead > MAX_LEAD_HOURS:
                 continue

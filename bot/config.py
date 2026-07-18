@@ -95,6 +95,7 @@ FLB_HORIZON_DAYS = (7, 90)
 FLB_MIN_VOLUME = 5000.0
 FLB_MIN_LIQUIDITY = 500.0
 FLB_CALIB_PATH = str(BOT_DIR / "data" / "flb_calib.json")
+WEATHER_CALIB_PATH = str(BOT_DIR / "data" / "weather_calib.json")
 FLB_PRICE_BUCKET = 0.05
 FLB_HORIZON_BUCKETS = [(0, 7), (7, 30), (30, 90), (90, 100000)]
 
