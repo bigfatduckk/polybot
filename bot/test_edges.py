@@ -301,22 +301,19 @@ def test_usud_prob_above_zero_sigma_is_step_function():
     assert usud.prob_above(90.0, 100.0, 0.0, 0.1) == 0.0
 
 
-def test_usud_ticker_from_question():
-    assert usud._ticker_from_question("SPY Up or Down on July 13, 2026") == ("SPY", "SPY")
-    assert usud._ticker_from_question("S&P 500 (SPX) up or down?") == ("SPX", "^GSPC")
-    assert usud._ticker_from_question("NVDA Up or Down on July 14") == ("NVDA", "NVDA")
-    assert usud._ticker_from_question("Dow Jones (DJIA) Up or Down on July 13") == ("DJIA", "^DJI")
-    assert usud._ticker_from_question("Tesla (TSLA) Up or Down on July 14") == ("TSLA", "TSLA")
-    assert usud._ticker_from_question("BTC above 100k") == (None, None)
+def test_usud_ticker_map_covers_all_configured():
+    from config import USUD_TICKERS
+    assert set(USUD_TICKERS) == set(usud.TICKERS)
+    for name, (slug_prefix, yf_sym) in usud.TICKERS.items():
+        assert slug_prefix == name.lower()
 
 
-def test_usud_ticker_rejects_crypto_up_or_down_markets():
-    # regression: "DOW" substring inside "DOWN" used to match every crypto
-    # 5-minute "Up or Down" market as DJIA. Leading-token match must reject them.
-    assert usud._ticker_from_question("Bitcoin Up or Down - July 18, 1:15AM-1:20AM ET") == (None, None)
-    assert usud._ticker_from_question("Ethereum Up or Down - July 18, 1:20AM-1:25AM ET") == (None, None)
-    assert usud._ticker_from_question("Hyperliquid Up or Down - July 18, 1:15AM-1:20AM ET") == (None, None)
-    assert usud._ticker_from_question("Dogecoin Up or Down - July 18, 1:15AM-1:20AM ET") == (None, None)
+def test_usud_slug_for_format():
+    import datetime as dt
+    d = dt.date(2026, 7, 13)
+    assert usud._slug_for("spy", d) == "spy-up-or-down-on-july-13-2026"
+    assert usud._slug_for("nvda", dt.date(2026, 7, 20)) == "nvda-up-or-down-on-july-20-2026"
+    assert usud._slug_for("djia", dt.date(2026, 12, 1)) == "djia-up-or-down-on-december-1-2026"
 
 
 def test_usud_compute_candidate_buy_signal_when_model_above_market():

@@ -1,6 +1,8 @@
 import json
 import math
 import sqlite3
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import markets
 from config import (
@@ -11,11 +13,23 @@ from config import (
     USUD_MIN_DEPTH,
     USUD_MIN_EDGE,
     USUD_RISK_FREE,
+    USUD_TICKERS,
 )
 from edge_engine import store_candidate, store_snapshot
 from engine import _walk_book
 
 EDGE = "usud"
+
+TICKERS = {
+    "SPY": ("spy", "SPY"),
+    "SPX": ("spx", "^GSPC"),
+    "DJIA": ("djia", "^DJI"),
+    "NVDA": ("nvda", "NVDA"),
+    "TSLA": ("tsla", "TSLA"),
+}
+
+MONTHS = ["january", "february", "march", "april", "may", "june",
+          "july", "august", "september", "october", "november", "december"]
 
 
 def _norm_cdf(x):
@@ -29,19 +43,25 @@ def prob_above(spot, strike, sigma, tau, r=0.0):
     return _norm_cdf(d2)
 
 
-def _ticker_from_question(q):
-    u = (q or "").upper().strip()
-    if u.startswith("SPY "):
-        return "SPY", "SPY"
-    if u.startswith("NVDA "):
-        return "NVDA", "NVDA"
-    if u.startswith("TSLA ") or u.startswith("TESLA "):
-        return "TSLA", "TSLA"
-    if u.startswith("S&P 500") or u.startswith("S&P500"):
-        return "SPX", "^GSPC"
-    if u.startswith("DOW JONES") or u.startswith("DJIA"):
-        return "DJIA", "^DJI"
-    return None, None
+def _et_today():
+    return datetime.now(ZoneInfo("America/New_York")).date()
+
+
+def _slug_for(slug_prefix, d):
+    return f"{slug_prefix}-up-or-down-on-{MONTHS[d.month - 1]}-{d.day}-{d.year}"
+
+
+def _fetch_event_markets(slug):
+    events = markets.fetch_events({"slug": slug, "closed": "false", "active": "true"})
+    if not events:
+        return []
+    out = []
+    for mkt in (events[0].get("markets") or []):
+        m = markets._market_from_mkt(mkt)
+        if m.yes_token_id:
+            markets._hydrate(m, markets.fetch_book(m.yes_token_id))
+        out.append(m)
+    return out
 
 
 def _fee(m, p):
@@ -178,39 +198,27 @@ def _fetch_quote(yf_sym, m):
         return None
 
 
-def _date_offset(days):
-    from datetime import datetime, timedelta, timezone
-    d = datetime.now(timezone.utc) + timedelta(days=days)
-    return d.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 def scan_usud(scan_id):
-    params = {
-        "closed": "false",
-        "active": "true",
-        "order": "endDate",
-        "ascending": "true",
-        "limit": 500,
-        "end_date_min": _date_offset(0),
-        "end_date_max": _date_offset(2),
-    }
-    mkts = markets.fetch_markets(params, with_book=True)
+    d = _et_today()
+    if d.weekday() >= 5:
+        return []
     cands = []
-    for m in mkts:
-        tok, yf_sym = _ticker_from_question(m.question)
-        if not tok:
-            continue
-        store_snapshot(EDGE, m, {"scan_id": scan_id, "ticker": tok})
-        quote = _fetch_quote(yf_sym, m)
-        if quote is None:
-            continue
-        quote["ticker"] = tok
-        priced = _price(m, quote)
-        if priced is not None:
-            _store_quote(scan_id, m, quote, priced)
-        c = compute_candidate(m, quote)
-        if c:
-            c["scan_id"] = scan_id
-            store_candidate(EDGE, scan_id, c)
-            cands.append(c)
+    for name in USUD_TICKERS:
+        slug_prefix, yf_sym = TICKERS[name]
+        for m in _fetch_event_markets(_slug_for(slug_prefix, d)):
+            store_snapshot(EDGE, m, {"scan_id": scan_id, "ticker": name})
+            if not m.yes_token_id or m.best_ask <= 0.0:
+                continue
+            quote = _fetch_quote(yf_sym, m)
+            if quote is None:
+                continue
+            quote["ticker"] = name
+            priced = _price(m, quote)
+            if priced is not None:
+                _store_quote(scan_id, m, quote, priced)
+            c = compute_candidate(m, quote)
+            if c:
+                c["scan_id"] = scan_id
+                store_candidate(EDGE, scan_id, c)
+                cands.append(c)
     return cands
