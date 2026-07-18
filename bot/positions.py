@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import datetime, timedelta, timezone
 
 from config import (
     DB_PATH,
@@ -7,6 +8,9 @@ from config import (
     PAPER_BANKROLL_FLB,
     PAPER_BANKROLL_USUD,
 )
+
+HKT = timezone(timedelta(hours=8))
+PM_EDGES = ("flb", "arb", "usud")
 
 
 def _connect():
@@ -61,6 +65,125 @@ def format_report(conn):
 
 def format_totals(conn):
     return format_edge_totals(conn)
+
+
+def _hkt_date(ts):
+    try:
+        return datetime.fromisoformat(ts).astimezone(HKT).date()
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_date(s):
+    if not s:
+        return datetime.now(timezone.utc).astimezone(HKT).date()
+    try:
+        return datetime.strptime(s, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def format_open_all(conn):
+    lines = ["=== open bets (all edges) ==="]
+    try:
+        wrows = conn.execute(
+            """SELECT f.id, o.city, o.market_date, f.side, f.price, f.size
+               FROM fills f JOIN orders o ON f.order_id = o.id
+               WHERE f.market_id NOT IN (SELECT market_id FROM settlements)
+               ORDER BY f.id DESC"""
+        ).fetchall()
+    except sqlite3.OperationalError:
+        wrows = []
+    lines.append("-- weather --")
+    if not wrows:
+        lines.append("  (no open)")
+    for r in wrows:
+        cost = r["price"] * r["size"]
+        lines.append(f"  #{r['id']} {r['city']} {r['market_date']} {r['side']} "
+                     f"@{r['price']:.3f} x{r['size']:.1f} cost=${cost:.2f}")
+
+    try:
+        prows = conn.execute(
+            """SELECT f.id, f.edge, f.side, f.price, f.size,
+               (SELECT s.question FROM pm_snapshots s
+                WHERE s.market_id = f.market_id ORDER BY s.id DESC LIMIT 1) AS question,
+               (SELECT s.end_date FROM pm_snapshots s
+                WHERE s.market_id = f.market_id ORDER BY s.id DESC LIMIT 1) AS end_date
+               FROM pm_fills f
+               LEFT JOIN pm_settlements s
+                 ON s.market_id = f.market_id AND s.edge = f.edge
+               WHERE s.id IS NULL
+               ORDER BY f.edge, f.id DESC"""
+        ).fetchall()
+    except sqlite3.OperationalError:
+        prows = []
+    by_edge = {}
+    for r in prows:
+        by_edge.setdefault(r["edge"], []).append(r)
+    for edge in PM_EDGES:
+        lines.append(f"-- {edge} --")
+        rows = by_edge.get(edge, [])
+        if not rows:
+            lines.append("  (no open)")
+        for r in rows:
+            cost = r["price"] * r["size"]
+            q = (r["question"] or "?")[:42]
+            end = (r["end_date"] or "")[:10]
+            lines.append(f"  #{r['id']} {q} {r['side']} @{r['price']:.3f} "
+                         f"x{r['size']:.1f} cost=${cost:.2f} ends {end}")
+    return "\n".join(lines)
+
+
+def format_settled_day(conn, date_str):
+    d = _parse_date(date_str)
+    if d is None:
+        return f"bad date '{date_str}': use YYYY-MM-DD"
+    lines = [f"=== settled on {d.isoformat()} (HKT) ==="]
+
+    try:
+        wrows = conn.execute(
+            """SELECT city, date, bucket_key, resolved_yes, pnl, ts
+               FROM settlements
+               WHERE market_id IN (SELECT market_id FROM fills)
+               ORDER BY ts DESC"""
+        ).fetchall()
+    except sqlite3.OperationalError:
+        wrows = []
+    w = [r for r in wrows if _hkt_date(r["ts"]) == d]
+    lines.append("-- weather --")
+    if not w:
+        lines.append("  (none)")
+    for r in w:
+        pnl = r["pnl"] or 0.0
+        won = "Y" if r["resolved_yes"] else "N"
+        lines.append(f"  {r['city']} {r['date']} bucket={r['bucket_key'] or '?'} "
+                     f"won={won} pnl=${pnl:+.2f}")
+
+    try:
+        prows = conn.execute(
+            """SELECT s.edge, s.resolved_yes, s.pnl, s.ts,
+               (SELECT q.question FROM pm_snapshots q
+                WHERE q.market_id = s.market_id ORDER BY q.id DESC LIMIT 1) AS question
+               FROM pm_settlements s
+               ORDER BY s.ts DESC"""
+        ).fetchall()
+    except sqlite3.OperationalError:
+        prows = []
+    by_edge = {}
+    for r in prows:
+        if _hkt_date(r["ts"]) == d:
+            by_edge.setdefault(r["edge"], []).append(r)
+    for edge in PM_EDGES:
+        lines.append(f"-- {edge} --")
+        rows = by_edge.get(edge, [])
+        if not rows:
+            lines.append("  (none)")
+        for r in rows:
+            pnl = r["pnl"] or 0.0
+            won = "Y" if r["resolved_yes"] else "N"
+            q = (r["question"] or "?")[:42]
+            lines.append(f"  {q} won={won} pnl=${pnl:+.2f}")
+    return "\n".join(lines)
 
 
 def _edge_line(name, open_n, settled_n, realized, bankroll):

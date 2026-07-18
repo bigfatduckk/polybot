@@ -1,12 +1,18 @@
-"""Telegram 'info' command responder (cron-polled, no daemon).
+"""Telegram command responder (cron-polled, no daemon).
 
-Cron runs this every ~2 min. It checks for new 'info' messages in the bot's
-Telegram chat and replies with the positions report (open bets, settled
-results, totals). Only the owner (TELEGRAM_CHAT_ID) gets a reply; messages
-from anyone else are silently ignored — a public bot must not leak positions.
+Cron runs this every ~2 min. It polls the bot's Telegram chat for new
+owner messages and replies. Only the owner (TELEGRAM_CHAT_ID) gets a
+reply; messages from anyone else are silently ignored.
 
-Latency: up to ~2 min between typing 'info' and the reply (next cron tick).
-Swap for an always-on systemd listener if instant response is needed.
+Commands:
+  info              open positions + settled + totals
+  pnl               paper PnL per edge (totals only)
+  opens             all open bets grouped by edge
+  settled           bets settled today (HKT)
+  settled YYYY-MM-DD bets settled on that date (HKT)
+
+Latency: up to ~2 min between typing a command and the reply (next cron
+tick). Swap for an always-on systemd listener if instant response is needed.
 
 cron line:
   */2 * * * * /root/polybot/.venv/bin/python /root/polybot/bot/info.py >> /root/polybot/info.log 2>&1
@@ -18,7 +24,13 @@ import httpx
 from dotenv import load_dotenv
 
 from config import TELEGRAM_TOKEN_ENV, TELEGRAM_CHAT_ID_ENV
-from positions import _connect, format_report, format_totals
+from positions import (
+    _connect,
+    format_report,
+    format_totals,
+    format_open_all,
+    format_settled_day,
+)
 
 ENV_PATH = Path(__file__).resolve().parent / ".env"
 META_KEY = "telegram_last_update_id"
@@ -78,10 +90,22 @@ def main():
         msg = upd.get("message") or {}
         text = (msg.get("text") or "").strip()
         chat_id = str(msg.get("chat", {}).get("id", ""))
-        if text.lower() in ("info", "/info") and chat_id == owner_chat:
+        if chat_id != owner_chat:
+            continue
+        low = text.lower()
+        if low.startswith("/"):
+            low = low[1:]
+        parts = low.split()
+        cmd = parts[0] if parts else ""
+        arg = parts[1] if len(parts) > 1 else None
+        if cmd == "info":
             _send(token, owner_chat, format_report(conn))
-        elif text.lower() in ("pnl", "/pnl") and chat_id == owner_chat:
+        elif cmd == "pnl":
             _send(token, owner_chat, format_totals(conn))
+        elif cmd == "opens":
+            _send(token, owner_chat, format_open_all(conn))
+        elif cmd == "settled":
+            _send(token, owner_chat, format_settled_day(conn, arg))
 
     if max_uid > last:
         _set_last_update_id(conn, max_uid)
