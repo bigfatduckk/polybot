@@ -98,3 +98,14 @@ def test_cull_if_due_deletes_old_snapshots_keeps_recent(tmp_path, monkeypatch):
 # guard: the default instance is A so the test suite never writes the live DB
 def test_default_instance_is_a():
     assert INST_TAG == "A"
+
+
+def test_format_pnl_both_labels_each_db(tmp_path):
+    import positions
+    a = tmp_path / "polymarket_bot.db"
+    b = tmp_path / "polymarket_bot_B.db"
+    for p in (a, b):
+        p.write_text("")  # empty file: tables missing → format_totals degrades gracefully
+    out = positions.format_pnl_both([("A", a), ("B", b)])
+    assert out.startswith("[A]")
+    assert "\n[B]" in out

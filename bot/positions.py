@@ -1,7 +1,9 @@
 import sqlite3
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from config import (
+    BOT_DIR,
     DB_PATH,
     PAPER_BANKROLL,
     PAPER_BANKROLL_ARB,
@@ -65,6 +67,28 @@ def format_report(conn):
 
 def format_totals(conn):
     return format_edge_totals(conn)
+
+
+def format_pnl_both(paths=None):
+    # Combined A+B paper PnL for the Telegram `pnl` command. Bot B runs no TG
+    # cron (only A polls the chat), so a single reply must cover both DBs.
+    # Reads each by explicit path so labels are correct regardless of which
+    # instance the responder happens to run under.
+    if paths is None:
+        paths = [("A", BOT_DIR / "polymarket_bot.db"),
+                 ("B", BOT_DIR / "polymarket_bot_B.db")]
+    sections = []
+    for tag, path in paths:
+        path = Path(path)
+        if not path.exists():
+            continue
+        conn = sqlite3.connect(str(path))
+        conn.row_factory = sqlite3.Row
+        try:
+            sections.append(f"[{tag}] {format_totals(conn)}")
+        finally:
+            conn.close()
+    return "\n".join(sections)
 
 
 def _hkt_date(ts):

@@ -29,6 +29,7 @@ from positions import (
     format_report,
     format_totals,
     format_open_all,
+    format_pnl_both,
     format_settled_day,
 )
 
@@ -103,7 +104,7 @@ def main():
         if cmd == "info":
             _send(token, owner_chat, format_report(conn))
         elif cmd == "pnl":
-            _send(token, owner_chat, format_totals(conn))
+            _send(token, owner_chat, format_pnl_both())
         elif cmd == "opens":
             _send(token, owner_chat, format_open_all(conn))
         elif cmd == "settled":
