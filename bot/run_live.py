@@ -18,7 +18,6 @@ import engine
 import live_engine as le
 import live_executor
 import live_settle
-from config import HALT_LIVE_FILE
 
 ENV_PATH = Path(__file__).resolve().parent / ".env"
 KEY_NOTICE_KEY = "last_key_missing_notice"
@@ -41,7 +40,7 @@ def _notify_once_daily(live_conn, meta_key, text):
 
 def job_weather_live():
     le.init_live_db()
-    if os.path.exists(HALT_LIVE_FILE):
+    if os.path.exists(le._halt_live_path()):
         engine.notify("[A-LIVE] weather-live skipped — HALT_LIVE present")
         return
     live_conn = le.get_live_db()

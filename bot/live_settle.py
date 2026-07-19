@@ -15,10 +15,10 @@ import live_executor
 import markets
 import settle
 from config import (
+    DAILY_PULSE_HOUR_HKT,
     LIVE_FUNDER_ENV,
     LIVE_MATIC_ALERT,
     LIVE_ORDER_STALE_MIN,
-    DAILY_PULSE_HOUR_HKT,
 )
 
 HKT = timezone(timedelta(hours=8))
@@ -36,6 +36,8 @@ _LB_PH = ",".join(["?"] * 4)  # ts, usdc, matic, source
 
 def job_maintain_live():
     le.init_live_db()
+    if os.path.exists(le._halt_live_path()):
+        return   # HALT blocks both jobs; existing positions managed on resume
     conn = le.get_live_db()
     client = None
     try:

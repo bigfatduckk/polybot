@@ -137,11 +137,13 @@ def test_halt_live_blocks_weather_live(tmp_path, monkeypatch):
     before = _snapshot_db(paper)
     import run_live
     run_live.job_weather_live()
+    ls.job_maintain_live()   # HALT blocks both jobs
     after = _snapshot_db(paper)
     assert before == after
     lc = sqlite3.connect(str(live))
-    n = lc.execute("SELECT COUNT(*) FROM live_orders").fetchone()[0]
-    assert n == 0   # HALT blocked all new orders
+    n_orders = lc.execute("SELECT COUNT(*) FROM live_orders").fetchone()[0]
+    n_ticks = lc.execute("SELECT COUNT(*) FROM live_ticks").fetchone()[0]
+    assert n_orders == 0 and n_ticks == 0   # HALT = true no-op for both jobs
     lc.close()
 
 
