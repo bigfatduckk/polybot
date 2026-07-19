@@ -138,3 +138,36 @@ PAPER_BANKROLL_USUD = 1000.0
 
 PAPER_BANKROLL_FLB = 1000.0
 PAPER_BANKROLL_ARB = 1000.0
+
+# ── LIVE TRADING (M4) ──────────────────────────────────────────────────────
+# Separate process (run_live.py) reading paper candidates READ-ONLY. Paper
+# crons never import live modules; live modules import paper modules only for
+# pure/read-only helpers. All live state → polymarket_bot_live.db. The paper
+# DBs (polymarket_bot.db / polymarket_bot_B.db) are never written by live.
+LIVE_DB_PATH = str(BOT_DIR / "polymarket_bot_live.db")
+HALT_LIVE_FILE = str(BOT_DIR / "HALT_LIVE")
+
+LIVE_BANKROLL = 200.0
+LIVE_PER_TRADE_CAP_FRAC = 0.05
+LIVE_PER_TRADE_CAP_ABS = 10.0
+LIVE_DAILY_LOSS_HALT_FRAC = 0.10
+LIVE_CONSECUTIVE_LOSS_HALT = 6
+LIVE_MAX_OPEN_POSITIONS = 5
+LIVE_MAX_POSITIONS_PER_REGION_DAY = 3
+LIVE_MIN_EDGE = 0.08
+LIVE_PRICE_BAND = (0.03, 0.97)
+LIVE_SIGNAL_MAX_AGE_MIN = 45
+LIVE_ORDER_STALE_MIN = 90
+LIVE_MATIC_ALERT = 0.5
+
+# Env-var NAMES (values read at runtime on the VPS, never in repo):
+LIVE_KEY_ENV = "POLY_PRIVATE_KEY"
+LIVE_FUNDER_ENV = "POLY_FUNDER"
+LIVE_SIG_TYPE_ENV = "POLY_SIG_TYPE"
+LIVE_DRY_RUN_ENV = "LIVE_DRY_RUN"
+
+# Polygon RPC (public; used only for read-only MATIC/USDC balance checks).
+POLYGON_RPC = "https://polygon-rpc.com"
+# Native USDC on Polygon (6 decimals) — what Polymarket settles in.
+USDC_CONTRACT = "0x3c499c542cEF5E3811e2640c431b8a1eBc8D5C5c"
+USDC_DECIMALS = 6

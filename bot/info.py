@@ -104,7 +104,14 @@ def main():
         if cmd == "info":
             _send(token, owner_chat, format_report(conn))
         elif cmd == "pnl":
-            _send(token, owner_chat, format_pnl_both())
+            if arg == "live":
+                try:
+                    from live_positions import format_live_pnl
+                    _send(token, owner_chat, format_live_pnl())
+                except Exception as e:
+                    _send(token, owner_chat, f"[A-LIVE] live pnl unavailable: {e}")
+            else:
+                _send(token, owner_chat, format_pnl_both())
         elif cmd == "opens":
             _send(token, owner_chat, format_open_all(conn))
         elif cmd == "settled":
