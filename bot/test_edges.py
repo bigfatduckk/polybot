@@ -369,3 +369,27 @@ def test_usud_compute_candidate_rejects_bad_quote():
     assert usud.compute_candidate(m, {"spot": 0, "iv": 0.2, "prior_close": 100, "tau_years": 0.1}) is None
     assert usud.compute_candidate(m, {"spot": 110, "iv": 0.0, "prior_close": 100, "tau_years": 0.1}) is None
     assert usud.compute_candidate(m, {"spot": 110, "iv": 0.2, "prior_close": 100, "tau_years": 0.0}) is None
+
+
+def test_usud_store_quote_inserts_row():
+    import os, sqlite3, tempfile, shutil
+    tmp = tempfile.mkdtemp()
+    db = os.path.join(tmp, "t.sqlite")
+    old_u, old_m = usud.DB_PATH, markets.DB_PATH
+    usud.DB_PATH = db
+    markets.DB_PATH = db
+    try:
+        markets.init_edge_db()
+        m = _usud_market(0.68, 0.70)
+        quote = _quote(110.0, 100.0)
+        priced = usud._price(m, quote)
+        assert priced is not None
+        usud._store_quote(1, m, quote, priced)
+        conn = sqlite3.connect(db)
+        n = conn.execute("SELECT COUNT(*) FROM usud_quotes").fetchone()[0]
+        conn.close()
+        assert n == 1
+    finally:
+        usud.DB_PATH = old_u
+        markets.DB_PATH = old_m
+        shutil.rmtree(tmp, ignore_errors=True)

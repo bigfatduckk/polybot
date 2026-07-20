@@ -132,7 +132,7 @@ def _store_quote(scan_id, m, quote, priced):
         """INSERT INTO usud_quotes(ts, scan_id, market_id, ticker, question, end_date,
            market_ask, market_bid, best_bid, best_ask, depth, p_model, spot, iv,
            prior_close, tau_years, buy_edge, sell_edge)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (datetime.now(timezone.utc).isoformat(timespec="seconds"), scan_id,
          m.market_id, quote.get("ticker", ""), m.question, m.end_date,
          priced["eff_ask"], priced["eff_bid"], m.best_bid, m.best_ask, m.depth,
