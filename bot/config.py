@@ -166,8 +166,13 @@ LIVE_FUNDER_ENV = "POLY_FUNDER"
 LIVE_SIG_TYPE_ENV = "POLY_SIG_TYPE"
 LIVE_DRY_RUN_ENV = "LIVE_DRY_RUN"
 
-# Polygon RPC (public; used only for read-only MATIC/USDC balance checks).
-POLYGON_RPC = "https://polygon-rpc.com"
+# Polygon RPC (public; read-only gas/USDC balance checks). polygon-rpc.com
+# 401s from the VPS ("API key disabled / tenant disabled", 2026-07-20); these
+# two returned 135.6 POL for the EOA same-day. fetch_balances tries primary
+# then fallbacks; any failure → (None, None) so check_balances skips the alert
+# rather than false-positiving on 0.
+POLYGON_RPC = "https://polygon-bor-rpc.publicnode.com"
+POLYGON_RPC_FALLBACKS = ["https://polygon.drpc.org"]
 # Native USDC on Polygon (6 decimals) — what Polymarket settles in.
 USDC_CONTRACT = "0x3c499c542cEF5E3811e2640c431b8a1eBc8D5C5c"
 USDC_DECIMALS = 6

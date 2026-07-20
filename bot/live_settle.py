@@ -16,7 +16,7 @@ import markets
 import settle
 from config import (
     DAILY_PULSE_HOUR_HKT,
-    LIVE_FUNDER_ENV,
+    LIVE_KEY_ENV,
     LIVE_MATIC_ALERT,
     LIVE_ORDER_STALE_MIN,
 )
@@ -210,12 +210,21 @@ def settle_resolved(conn):
 
 
 def check_balances(conn):
-    """Raw JSON-RPC MATIC + USDC balanceOf(funder); alert if MATIC < threshold
-    (daily-throttled). No SDK, no USDC top-up — I5."""
-    funder = os.environ.get(LIVE_FUNDER_ENV)
-    if not funder:
+    """Gas-wallet POL check (daily-throttled). Targets the EOA signer derived
+    from POLY_PRIVATE_KEY, NOT the Polymarket proxy (POLY_FUNDER) — the proxy
+    is a contract that holds 0 native POL by design; gas lives on the EOA.
+    fetch_balances returns (None, None) on RPC failure → skip + no alert (safe
+    direction: no false positive). The stored USDC is vestigial (the bankroll
+    lives in the CTF exchange, not as an ERC-20 balanceOf)."""
+    pk = os.environ.get(LIVE_KEY_ENV)
+    if not pk:
         return
-    usdc, matic = live_executor.fetch_balances(funder)
+    try:
+        from eth_account import Account
+        gas_eoa = Account.from_key(pk).address
+    except Exception:
+        return
+    usdc, matic = live_executor.fetch_balances(gas_eoa)
     if usdc is None and matic is None:
         return
     conn.execute(

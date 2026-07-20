@@ -23,6 +23,7 @@ from config import (
     LIVE_MIN_EDGE,
     LIVE_SIG_TYPE_ENV,
     POLYGON_RPC,
+    POLYGON_RPC_FALLBACKS,
     USDC_CONTRACT,
     USDC_DECIMALS,
     tls_verify,
@@ -227,22 +228,32 @@ def _store_order(live_conn, spec, options, status, clob_id, raw):
 
 # ── balance check (read-only RPC; live_settle calls this) ──────────────────
 def fetch_balances(funder):
-    """Raw JSON-RPC: MATIC balance + USDC balanceOf(funder). No SDK."""
+    """Raw JSON-RPC: native POL (eth_getBalance) + USDC balanceOf(funder).
+    No SDK. Returns (usdc, matic) as floats, or (None, None) on any RPC/parse
+    failure so callers skip the alert instead of false-positiving on 0. Tries
+    POLYGON_RPC then each fallback. Results matched by id, not batch position
+    (JSON-RPC batch order is not guaranteed)."""
     usdc_data = _erc20_balance_of_data(funder)
-    payload_m = [{"jsonrpc": "2.0", "id": 1, "method": "eth_getBalance",
-                  "params": [funder, "latest"]},
-                 {"jsonrpc": "2.0", "id": 2, "method": "eth_call",
-                  "params": [{"to": USDC_CONTRACT, "data": usdc_data}, "latest"]}]
-    try:
-        r = httpx.post(POLYGON_RPC, json=payload_m, timeout=30,
-                       headers={"User-Agent": "MarcusVaultBot/1.0"},
-                       verify=tls_verify())
-        out = r.json()
-    except Exception:
-        return None, None
-    matic = _hex_to_float(_result(out, 1), 18)
-    usdc = _hex_to_float(_result(out, 2), USDC_DECIMALS)
-    return usdc, matic
+    payload = [{"jsonrpc": "2.0", "id": 1, "method": "eth_getBalance",
+                "params": [funder, "latest"]},
+               {"jsonrpc": "2.0", "id": 2, "method": "eth_call",
+                "params": [{"to": USDC_CONTRACT, "data": usdc_data}, "latest"]}]
+    for rpc in [POLYGON_RPC, *POLYGON_RPC_FALLBACKS]:
+        try:
+            r = httpx.post(rpc, json=payload, timeout=30,
+                           headers={"User-Agent": "MarcusVaultBot/1.0"},
+                           verify=tls_verify())
+            if r.status_code != 200:
+                continue
+            out = r.json()
+        except Exception:
+            continue
+        matic_hex = _rpc_result(out, 1)
+        usdc_hex = _rpc_result(out, 2)
+        if matic_hex is None or usdc_hex is None:
+            continue
+        return _hex_to_float(usdc_hex, USDC_DECIMALS), _hex_to_float(matic_hex, 18)
+    return None, None
 
 
 def _erc20_balance_of_data(funder):
@@ -252,9 +263,19 @@ def _erc20_balance_of_data(funder):
     return "0x70a08231" + addr
 
 
-def _result(batch, idx):
-    item = batch[idx] if isinstance(batch, list) and idx < len(batch) else {}
-    return item.get("result") or "0x0"
+def _rpc_result(batch, rpc_id):
+    """Match a JSON-RPC batch response item by id. Returns the result hex
+    string, or None if the batch isn't a list, the id is absent, or the item
+    carries an error/missing result — so RPC failures surface as None instead
+    of a silent 0."""
+    if not isinstance(batch, list):
+        return None
+    for item in batch:
+        if isinstance(item, dict) and item.get("id") == rpc_id:
+            if "error" in item or "result" not in item:
+                return None
+            return item.get("result") or "0x0"
+    return None
 
 
 def _hex_to_float(hexval, decimals):

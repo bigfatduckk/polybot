@@ -279,3 +279,20 @@ def test_pnl_live_format_reads_live_db_only(tmp_path, monkeypatch):
     out = lp.format_live_pnl()
     assert out.startswith("[A-LIVE]")
     assert "not initialized" in out or "no open" in out
+
+
+def test_rpc_result_matches_by_id_and_detects_errors():
+    # order-preserving batch: id:1=MATIC, id:2=USDC — must match by id, not index
+    batch = [{"id": 1, "result": "0x1bc16d674ec80000"},  # 2e18 / 1e18 = 2.0 POL
+             {"id": 2, "result": "0xbebc2000"}]          # 2e9 / 1e6 = 2000 USDC
+    assert lx._rpc_result(batch, 1) == "0x1bc16d674ec80000"
+    assert lx._rpc_result(batch, 2) == "0xbebc2000"
+    # reversed order (JSON-RPC doesn't guarantee order) — still correct by id
+    rev = list(reversed(batch))
+    assert lx._rpc_result(rev, 1) == "0x1bc16d674ec80000"
+    # error response → None (was the false-positive root cause: silently 0)
+    assert lx._rpc_result([{"id": 1, "error": {"code": -32051}}], 1) is None
+    # non-list (HTTP error body like {"error": "tenant disabled"}) → None
+    assert lx._rpc_result({"error": "tenant disabled"}, 1) is None
+    # missing id → None
+    assert lx._rpc_result([{"id": 1, "result": "0x0"}], 2) is None
