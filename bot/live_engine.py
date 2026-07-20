@@ -148,7 +148,9 @@ def read_new_signals(paper_conn, live_conn):
     """Read candidates past the cursor, joined to the latest snapshot per
     market_id. Filters: edge >= LIVE_MIN_EDGE, ts within LIVE_SIGNAL_MAX_AGE_MIN.
     Always advances the cursor to the max id seen (skipped or not) so a missed
-    tick is never replayed from the backlog. Returns list[LiveSignal]."""
+    tick is never replayed from the backlog. Returns (signals, evaluated) where
+    evaluated = candidates fetched past the cursor (pre-filter), so callers can
+    surface 'the filter ran over N' even when signals is empty."""
     cursor = int(live_meta_get(live_conn, "candidate_cursor", "0") or "0")
     rows = paper_conn.execute(
         """
@@ -195,7 +197,7 @@ def read_new_signals(paper_conn, live_conn):
             ts=r["ts"],
         ))
     live_meta_set(live_conn, "candidate_cursor", str(max_id))
-    return signals
+    return signals, len(rows)
 
 
 def _age_min(ts_str, now):

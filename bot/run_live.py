@@ -55,7 +55,7 @@ def job_weather_live():
         dry = live_executor.is_dry_run()
         paper_conn = le.paper_ro_conn()
         try:
-            sigs = le.read_new_signals(paper_conn, live_conn)
+            sigs, evaluated = le.read_new_signals(paper_conn, live_conn)
             state = le.load_live_state(live_conn)
             posted = dry_signed = rejected = skipped = 0
             for sig in sigs:
@@ -88,9 +88,11 @@ def job_weather_live():
                     rejected += 1
                     engine.notify(f"[A-LIVE] order rejected {sig.city} {sig.market_date}")
             tag = "DRY-RUN" if dry else "LIVE"
+            gated = evaluated - len(sigs)
             engine.notify(
-                f"[A-LIVE] weather-live tick ({tag}): signals={len(sigs)} "
-                f"posted={posted} dry_signed={dry_signed} rejected={rejected} skipped={skipped}")
+                f"[A-LIVE] weather-live tick ({tag}): evaluated={evaluated} "
+                f"gated={gated} signals={len(sigs)} posted={posted} "
+                f"dry_signed={dry_signed} rejected={rejected} skipped={skipped}")
             live_conn.commit()
         finally:
             paper_conn.close()

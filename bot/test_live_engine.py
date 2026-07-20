@@ -62,7 +62,7 @@ def _seed_snapshot(conn, market_id, yes_tok, ts, city="Seoul", mdate="2026-07-20
 def _read(paper, live):
     pc = le.paper_ro_conn()
     lc = le.get_live_db()
-    sigs = le.read_new_signals(pc, lc)
+    sigs, _ = le.read_new_signals(pc, lc)
     lc.commit()
     lc.close()
     pc.close()
@@ -110,6 +110,22 @@ def test_signal_edge_threshold(tmp_path, monkeypatch):
     sigs = _read(paper, _)
     assert len(sigs) == 1
     assert sigs[0].market_id == "m2"
+
+
+def test_signal_evaluated_counts_pre_filter(tmp_path, monkeypatch):
+    # evaluated surfaces 'filter ran over N' even when all are gated out — the
+    # visibility gap that made signals=0 look like 'nothing happened'.
+    paper, _ = _setup_dbs(tmp_path, monkeypatch)
+    conn = engine.get_db()
+    _seed_candidate(conn, 1, market_id="m1", edge=0.07)   # sub-threshold
+    _seed_candidate(conn, 2, market_id="m2", edge=0.06)   # sub-threshold
+    conn.close()
+    pc = le.paper_ro_conn(); lc = le.get_live_db()
+    sigs, evaluated = le.read_new_signals(pc, lc)
+    lc.commit(); lc.close(); pc.close()
+    assert sigs == []                  # nothing passed the edge gate
+    assert evaluated == 2             # but the arm did look at both
+    assert evaluated - len(sigs) == 2  # gated count
 
 
 def test_signal_cursor_advances_past_skipped(tmp_path, monkeypatch):
