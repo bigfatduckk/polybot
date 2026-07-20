@@ -83,11 +83,11 @@ def _setup_iso(tmp_path, monkeypatch, halt=False):
     # seed one fresh, over-edge candidate (buy)
     conn = engine.get_db()
     conn.execute(f"INSERT INTO snapshots({_SNAP_COLS}) VALUES({_SNAP_PH})",
-        ("2026-07-20T10:00:00+00:00", "m1", "e1", "c1", "q", "Seoul", "2026-07-20",
+        (le._now_iso(), "m1", "e1", "c1", "q", "Seoul", "2026-07-20",
          "30C", "{}", "2026-07-21T00:00:00+00:00", 0.45, 0.55, 100, 100, 200, 0.01, 5.0,
          0.0, 0, 0, 1000.0, 0.50, "yes1", "{}"))
     conn.execute(f"INSERT INTO candidates({_CAND_COLS}) VALUES({_CAND_PH})",
-        ("2026-07-20T10:00:00+00:00", 1, "m1", "c1", "buy", 0.60,
+        (le._now_iso(), 1, "m1", "c1", "buy", 0.60,
          json.dumps({"ecmwf_ifs025": 0.60}), 0.10, 24.0, "h", "30C", 0.50, 29.0, 0.50, "{}"))
     conn.commit()
     conn.close()

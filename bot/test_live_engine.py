@@ -36,13 +36,13 @@ def _seed_candidate(conn, cid, market_id="m1", city="Seoul", mdate="2026-07-20",
                     eff_price=0.50):
     conn.execute(
         f"INSERT INTO snapshots({_SNAP_COLS}) VALUES({_SNAP_PH})",
-        (ts or "2026-07-20T10:00:00+00:00", market_id, "e1", cond, "q", city, mdate,
+        (ts or le._now_iso(), market_id, "e1", cond, "q", city, mdate,
          bucket, "{}", "2026-07-21T00:00:00+00:00", 0.45, 0.55, 100, 100, 200, 0.01, 5.0,
          fee_rate, int(fees), int(neg), 1000.0, 0.50, yes_tok, "{}"),
     )
     conn.execute(
         f"INSERT INTO candidates({_CAND_COLS}) VALUES({_CAND_PH})",
-        (ts or "2026-07-20T10:00:00+00:00", 1, market_id, cond, side, p,
+        (ts or le._now_iso(), 1, market_id, cond, side, p,
          json.dumps({"ecmwf_ifs025": p}), edge, 24.0, "h", bucket, eff_price, 29.0, 0.50, "{}"),
     )
     conn.commit()
