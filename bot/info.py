@@ -7,7 +7,14 @@ reply; messages from anyone else are silently ignored.
 Commands:
   info              open positions + settled + totals
   pnl               paper PnL per edge (totals only)
+  pnl live          live-arm PnL (open + last 10 settled + realized)
   opens             all open bets grouped by edge
+  opens live        open LIVE bets only
+  live              one-glance live-arm health (HALT/DRY_RUN/counts/gas/last tick)
+  ticks [N]         last N live_ticks rows (evaluated/gated/skip history; default 10)
+  gas               last 3 live_balances reads (gas/usdc trend)
+  halt yes          set HALT_LIVE (pauses live arm; `halt` alone prompts)
+  unhalt yes        clear HALT_LIVE (resumes live arm; `unhalt` alone prompts)
   settled           bets settled today (HKT)
   settled YYYY-MM-DD bets settled on that date (HKT)
 
@@ -113,7 +120,39 @@ def main():
             else:
                 _send(token, owner_chat, format_pnl_both())
         elif cmd == "opens":
-            _send(token, owner_chat, format_open_all(conn))
+            if arg == "live":
+                try:
+                    from live_positions import format_live_open
+                    _send(token, owner_chat, format_live_open())
+                except Exception as e:
+                    _send(token, owner_chat, f"[A-LIVE] live opens unavailable: {e}")
+            else:
+                _send(token, owner_chat, format_open_all(conn))
+        elif cmd == "live":
+            try:
+                from live_positions import format_live_health
+                _send(token, owner_chat, format_live_health())
+            except Exception as e:
+                _send(token, owner_chat, f"[A-LIVE] live health unavailable: {e}")
+        elif cmd == "ticks":
+            try:
+                from live_positions import format_live_ticks
+                n = int(arg) if arg and arg.isdigit() else 10
+                _send(token, owner_chat, format_live_ticks(n))
+            except Exception as e:
+                _send(token, owner_chat, f"[A-LIVE] ticks unavailable: {e}")
+        elif cmd == "gas":
+            try:
+                from live_positions import format_live_gas
+                _send(token, owner_chat, format_live_gas())
+            except Exception as e:
+                _send(token, owner_chat, f"[A-LIVE] gas unavailable: {e}")
+        elif cmd in ("halt", "unhalt"):
+            try:
+                from live_control import handle_control
+                _send(token, owner_chat, handle_control(parts))
+            except Exception as e:
+                _send(token, owner_chat, f"[A-LIVE] control unavailable: {e}")
         elif cmd == "settled":
             _send(token, owner_chat, format_settled_day(conn, arg))
 

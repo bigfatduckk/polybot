@@ -281,3 +281,141 @@ def test_risk_per_trade_cap_blocks_oversize():
                             size=100.0, notional=50.0, edge_at_exec=0.10, kelly_fraction=0.0)
     v = le.live_risk_check(spec, _state())
     assert not v.approved and "per-trade cap" in v.reason
+
+
+# ── live_positions formatters (live / opens live) ──────────────────────────
+def _seed_live_rows(live, monkeypatch, tmp_path):
+    monkeypatch.setattr(le, "LIVE_DB_PATH", str(live))
+    le.init_live_db()
+    monkeypatch.setattr(config, "HALT_LIVE_FILE", str(tmp_path / "NOPE"))
+    lc = le.get_live_db()
+    lc.execute(
+        "INSERT INTO live_orders(ts, city, market_date, signal_side, price, size, "
+        "dry_run, status) VALUES(?,?,?,?,?,?,?,?)",
+        ("2026-07-20T12:20:00+00:00", "Seoul", "2026-07-20", "buy", 0.45, 10, 1, "posted"))
+    lc.execute(
+        "INSERT INTO live_orders(ts, city, market_date, signal_side, price, size, "
+        "dry_run, status) VALUES(?,?,?,?,?,?,?,?)",
+        ("2026-07-20T12:21:00+00:00", "Tokyo", "2026-07-20", "buy", 0.30, 8, 1, "rejected"))
+    lc.execute(
+        "INSERT INTO live_settlements(ts, city, date, bucket_key, resolved_yes, pnl) "
+        "VALUES(?,?,?,?,?,?)",
+        ("2026-07-20T13:00:00+00:00", "Seoul", "2026-07-20", "30C", 1, 5.50))
+    lc.execute(
+        "INSERT INTO live_balances(ts, usdc, matic, source) VALUES(?,?,?,?)",
+        ("2026-07-20T12:08:00+00:00", 200.0, 135.6, "rpc"))
+    lc.execute(
+        "INSERT INTO live_ticks(ts, job, note) VALUES(?,?,?)",
+        ("2026-07-20T12:20:05+00:00", "weather-live", "skip:low_edge"))
+    lc.commit()
+    lc.close()
+
+
+def test_live_health_one_glance(tmp_path, monkeypatch):
+    import live_positions as lp
+    _setup_dbs(tmp_path, monkeypatch)
+    _seed_live_rows(tmp_path / "live.db", monkeypatch, tmp_path)
+    monkeypatch.setenv("LIVE_DRY_RUN", "1")
+    out = lp.format_live_health(path=str(tmp_path / "live.db"))
+    assert "HALT=no" in out and "DRY_RUN=on" in out
+    assert "open=1 dry_signed=1 rejected=1" in out   # posted counts as open+dry_signed
+    assert "settled=1 realized=$+5.50" in out
+    assert "gas=135.6 POL" in out and "usdc=$200.00" in out
+    assert "weather-live skip:low_edge" in out
+
+
+def test_live_health_halt_and_go_live(tmp_path, monkeypatch):
+    import live_positions as lp
+    _setup_dbs(tmp_path, monkeypatch)
+    _seed_live_rows(tmp_path / "live.db", monkeypatch, tmp_path)
+    halt = tmp_path / "HALT_LIVE"
+    halt.write_text("x")
+    monkeypatch.setattr(config, "HALT_LIVE_FILE", str(halt))
+    monkeypatch.setenv("LIVE_DRY_RUN", "0")
+    out = lp.format_live_health(path=str(tmp_path / "live.db"))
+    assert "HALT=yes" in out and "DRY_RUN=OFF" in out
+
+
+def test_live_open_lists_only_open(tmp_path, monkeypatch):
+    import live_positions as lp
+    _setup_dbs(tmp_path, monkeypatch)
+    _seed_live_rows(tmp_path / "live.db", monkeypatch, tmp_path)
+    out = lp.format_live_open(path=str(tmp_path / "live.db"))
+    assert "Seoul" in out and "Tokyo" not in out   # rejected excluded
+
+
+def test_live_ticks_lists_history(tmp_path, monkeypatch):
+    import live_positions as lp
+    _setup_dbs(tmp_path, monkeypatch)
+    _seed_live_rows(tmp_path / "live.db", monkeypatch, tmp_path)
+    out = lp.format_live_ticks(10, path=str(tmp_path / "live.db"))
+    assert "live ticks" in out and "weather-live skip:low_edge" in out
+
+
+def test_live_ticks_n_clamp(tmp_path, monkeypatch):
+    import live_positions as lp
+    _setup_dbs(tmp_path, monkeypatch)
+    _seed_live_rows(tmp_path / "live.db", monkeypatch, tmp_path)
+    out = lp.format_live_ticks(1, path=str(tmp_path / "live.db"))
+    assert out.count("\n") == 1   # header + 1 row
+
+
+def test_live_gas_lists_balances(tmp_path, monkeypatch):
+    import live_positions as lp
+    _setup_dbs(tmp_path, monkeypatch)
+    _seed_live_rows(tmp_path / "live.db", monkeypatch, tmp_path)
+    out = lp.format_live_gas(path=str(tmp_path / "live.db"))
+    assert "gas=135.6 POL" in out and "usdc=$200.00" in out
+
+
+# ── live control: halt / unhalt ─────────────────────────────────────────────
+def _setup_control(tmp_path, monkeypatch):
+    import live_positions as lp
+    live = tmp_path / "live.db"
+    monkeypatch.setattr(le, "LIVE_DB_PATH", str(live))
+    monkeypatch.setattr(lp, "LIVE_DB_PATH", str(live))
+    le.init_live_db()
+    halt = tmp_path / "HALT_LIVE"
+    monkeypatch.setattr(config, "HALT_LIVE_FILE", str(halt))
+    return halt
+
+
+def test_control_halt_needs_confirm(tmp_path, monkeypatch):
+    import live_control as lc
+    halt = _setup_control(tmp_path, monkeypatch)
+    out = lc.handle_control(["halt"])
+    assert "halt yes" in out and not halt.exists()
+
+
+def test_control_halt_confirmed_sets_file_and_audits(tmp_path, monkeypatch):
+    import live_control as lc
+    halt = _setup_control(tmp_path, monkeypatch)
+    out = lc.handle_control(["halt", "yes"])
+    assert "HALT_LIVE SET" in out and halt.exists()
+    c = le.get_live_db()
+    n_h = c.execute("SELECT COUNT(*) FROM live_halts WHERE reason='telegram:set'").fetchone()[0]
+    n_t = c.execute("SELECT COUNT(*) FROM live_ticks WHERE note='halt:set'").fetchone()[0]
+    c.close()
+    assert n_h == 1 and n_t == 1
+
+
+def test_control_unhalt_confirmed_clears(tmp_path, monkeypatch):
+    import live_control as lc
+    halt = _setup_control(tmp_path, monkeypatch)
+    halt.write_text("x")
+    out = lc.handle_control(["unhalt", "yes"])
+    assert "CLEARED" in out and not halt.exists()
+
+
+def test_control_unhalt_idempotent_when_absent(tmp_path, monkeypatch):
+    import live_control as lc
+    halt = _setup_control(tmp_path, monkeypatch)
+    out = lc.handle_control(["unhalt", "yes"])
+    assert "CLEARED" in out and not halt.exists()
+
+
+def test_control_unknown_subcommand(tmp_path, monkeypatch):
+    import live_control as lc
+    _setup_control(tmp_path, monkeypatch)
+    out = lc.handle_control(["frobnicate"])
+    assert "usage" in out
