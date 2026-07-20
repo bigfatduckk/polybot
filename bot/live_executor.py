@@ -59,7 +59,15 @@ def get_client():
         host=CLOB_BASE, chain_id=137, key=key,
         signature_type=_sig_type(), funder=funder,
     )
-    client.set_api_creds(client.create_or_derive_api_key())
+    # Derive-first: GET the existing key on steady state; POST-create only as
+    # first-run fallback. create_or_derive_api_key() POSTs-then-GETs, logging a
+    # noisy 400 "key already exists" every tick after the first — derive-first
+    # avoids it (the 400 was cosmetic, auth always succeeded).
+    try:
+        creds = client.derive_api_key()
+    except Exception:
+        creds = client.create_api_key()
+    client.set_api_creds(creds)
     return client
 
 

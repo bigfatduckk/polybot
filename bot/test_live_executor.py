@@ -296,3 +296,45 @@ def test_rpc_result_matches_by_id_and_detects_errors():
     assert lx._rpc_result({"error": "tenant disabled"}, 1) is None
     # missing id → None
     assert lx._rpc_result([{"id": 1, "result": "0x0"}], 2) is None
+
+
+def _fake_clob_client(monkeypatch, *, derive_raises, derive_returns="derived", create_returns="created"):
+    """Inject a fake py_clob_client_v2.ClobClient recording derive/create calls."""
+    calls = {"derive": 0, "create": 0}
+    class FakeCreds:
+        def __init__(self, tag): self.tag = tag
+    class FakeClient:
+        def __init__(self, **kw): pass
+        def set_api_creds(self, c): self._creds = c
+        def derive_api_key(self):
+            calls["derive"] += 1
+            if derive_raises: raise RuntimeError("no key")
+            return FakeCreds(derive_returns)
+        def create_api_key(self):
+            calls["create"] += 1
+            return FakeCreds(create_returns)
+    import py_clob_client_v2
+    monkeypatch.setattr(py_clob_client_v2, "ClobClient", FakeClient)
+    return calls, FakeClient
+
+
+def test_get_client_derives_existing_key_without_noisy_create(monkeypatch):
+    # steady state: derive succeeds → create must NOT be called (avoids the 400)
+    monkeypatch.setenv("POLY_PRIVATE_KEY", "0x" + "1" * 64)
+    monkeypatch.setenv("POLY_FUNDER", "0x" + "2" * 40)
+    monkeypatch.setenv("POLY_SIG_TYPE", "2")
+    calls, _ = _fake_clob_client(monkeypatch, derive_raises=False, derive_returns="derived")
+    client = lx.get_client()
+    assert calls == {"derive": 1, "create": 0}
+    assert client._creds.tag == "derived"
+
+
+def test_get_client_falls_back_to_create_when_no_key(monkeypatch):
+    # first run: derive raises → fall back to POST create
+    monkeypatch.setenv("POLY_PRIVATE_KEY", "0x" + "1" * 64)
+    monkeypatch.setenv("POLY_FUNDER", "0x" + "2" * 40)
+    monkeypatch.setenv("POLY_SIG_TYPE", "2")
+    calls, _ = _fake_clob_client(monkeypatch, derive_raises=True, create_returns="created")
+    client = lx.get_client()
+    assert calls == {"derive": 1, "create": 1}
+    assert client._creds.tag == "created"
