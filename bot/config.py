@@ -159,6 +159,9 @@ LIVE_PRICE_BAND = (0.03, 0.97)
 LIVE_SIGNAL_MAX_AGE_MIN = 45
 LIVE_ORDER_STALE_MIN = 90
 LIVE_MATIC_ALERT = 0.5
+# Free-collateral floor (pUSD). Fires when the proxy balanceOf drops below
+# this — capital is locked in open fills OR lost. Check open positions to tell.
+LIVE_PUSD_ALERT = 50.0
 
 # Env-var NAMES (values read at runtime on the VPS, never in repo):
 LIVE_KEY_ENV = "POLY_PRIVATE_KEY"

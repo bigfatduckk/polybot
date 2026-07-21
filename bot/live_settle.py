@@ -19,6 +19,7 @@ from config import (
     LIVE_KEY_ENV,
     LIVE_FUNDER_ENV,
     LIVE_MATIC_ALERT,
+    LIVE_PUSD_ALERT,
     LIVE_ORDER_STALE_MIN,
 )
 
@@ -243,6 +244,15 @@ def check_balances(conn):
             engine.notify(
                 f"[A-LIVE] MATIC low: {matic:.3f} (< {LIVE_MATIC_ALERT}). "
                 f"Top up MATIC only (never the USDC bankroll).")
+    if usdc_proxy is not None and usdc_proxy < LIVE_PUSD_ALERT:
+        today = datetime.now(HKT).strftime("%Y-%m-%d")
+        last = le.live_meta_get(conn, "last_pusd_alert", "")
+        if last != today:
+            le.live_meta_set(conn, "last_pusd_alert", today)
+            import engine
+            engine.notify(
+                f"[A-LIVE] pUSD low: {usdc_proxy:.2f} (< {LIVE_PUSD_ALERT}). "
+                f"Free collateral low — check open positions vs losses.")
 
 
 def daily_pulse(conn):
