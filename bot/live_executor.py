@@ -246,7 +246,12 @@ def fetch_balances(funder):
                 "params": [funder, "latest"]},
                {"jsonrpc": "2.0", "id": 2, "method": "eth_call",
                 "params": [{"to": USDC_CONTRACT, "data": usdc_data}, "latest"]}]
-    for rpc in [POLYGON_RPC, *POLYGON_RPC_FALLBACKS]:
+    # Alchemy free-tier if POLYGON_RPC_KEY set in .env (publicnode flaky for
+    # eth_call; polygon-rpc.com/ankr 403 key-gated). Read at call time — config
+    # import runs before load_dotenv, so a module-level os.environ.get would miss it.
+    _rpc_key = os.environ.get("POLYGON_RPC_KEY", "")
+    _rpcs = ([f"https://polygon-mainnet.g.alchemy.com/v2/{_rpc_key}"] if _rpc_key else []) + [POLYGON_RPC, *POLYGON_RPC_FALLBACKS]
+    for rpc in _rpcs:
         try:
             r = httpx.post(rpc, json=payload, timeout=30,
                            headers={"User-Agent": "MarcusVaultBot/1.0"},

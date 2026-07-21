@@ -174,5 +174,5 @@ LIVE_DRY_RUN_ENV = "LIVE_DRY_RUN"
 POLYGON_RPC = "https://polygon-bor-rpc.publicnode.com"
 POLYGON_RPC_FALLBACKS = ["https://polygon.drpc.org"]
 # Native USDC on Polygon (6 decimals) — what Polymarket settles in.
-USDC_CONTRACT = "0x3c499c542cEF5E3811e2640c431b8a1eBc8D5C5c"
+USDC_CONTRACT = "0x3c499c542cEF5E3811F1197a409c5f9d5E6c4EbC"
 USDC_DECIMALS = 6
