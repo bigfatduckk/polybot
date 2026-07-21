@@ -287,7 +287,10 @@ def _rpc_result(batch, rpc_id):
         if isinstance(item, dict) and item.get("id") == rpc_id:
             if "error" in item or "result" not in item:
                 return None
-            return item.get("result") or "0x0"
+            res = item.get("result")
+            if not res or res == "0x":
+                return None
+            return res
     return None
 
 

@@ -296,6 +296,8 @@ def test_rpc_result_matches_by_id_and_detects_errors():
     assert lx._rpc_result({"error": "tenant disabled"}, 1) is None
     # missing id → None
     assert lx._rpc_result([{"id": 1, "result": "0x0"}], 2) is None
+    # bare "0x" (malformed empty result, no error key — publicnode flakiness) → None not 0.0
+    assert lx._rpc_result([{"id": 1, "result": "0x"}], 1) is None
 
 
 def _fake_clob_client(monkeypatch, *, derive_raises, derive_returns="derived", create_returns="created"):
