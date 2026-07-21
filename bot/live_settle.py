@@ -17,6 +17,7 @@ import settle
 from config import (
     DAILY_PULSE_HOUR_HKT,
     LIVE_KEY_ENV,
+    LIVE_FUNDER_ENV,
     LIVE_MATIC_ALERT,
     LIVE_ORDER_STALE_MIN,
 )
@@ -210,12 +211,12 @@ def settle_resolved(conn):
 
 
 def check_balances(conn):
-    """Gas-wallet POL check (daily-throttled). Targets the EOA signer derived
-    from POLY_PRIVATE_KEY, NOT the Polymarket proxy (POLY_FUNDER) — the proxy
-    is a contract that holds 0 native POL by design; gas lives on the EOA.
-    fetch_balances returns (None, None) on RPC failure → skip + no alert (safe
-    direction: no false positive). The stored USDC is vestigial (the bankroll
-    lives in the CTF exchange, not as an ERC-20 balanceOf)."""
+    """Balance check (daily-throttled). Gas (POL) is read from the EOA signer
+    derived from POLY_PRIVATE_KEY (gas lives on the EOA, not the proxy).
+    Trading collateral (pUSD) is read from the Polymarket proxy (POLY_FUNDER)
+    — that is where the pUSD sits. fetch_balances returns (None, None) on RPC
+    failure → that side is skipped (no false positive; the MATIC alert fires
+    only when matic is a real non-None value below threshold)."""
     pk = os.environ.get(LIVE_KEY_ENV)
     if not pk:
         return
@@ -224,12 +225,14 @@ def check_balances(conn):
         gas_eoa = Account.from_key(pk).address
     except Exception:
         return
-    usdc, matic = live_executor.fetch_balances(gas_eoa)
-    if usdc is None and matic is None:
+    proxy = os.environ.get(LIVE_FUNDER_ENV)
+    _, matic = live_executor.fetch_balances(gas_eoa)
+    usdc_proxy, _ = (live_executor.fetch_balances(proxy) if proxy else (None, None))
+    if matic is None and usdc_proxy is None:
         return
     conn.execute(
         f"INSERT INTO live_balances(ts, usdc, matic, source) VALUES({_LB_PH})",
-        (le._now_iso(), usdc or 0.0, matic or 0.0, "rpc"),
+        (le._now_iso(), usdc_proxy or 0.0, matic or 0.0, "rpc"),
     )
     if matic is not None and matic < LIVE_MATIC_ALERT:
         today = datetime.now(HKT).strftime("%Y-%m-%d")
