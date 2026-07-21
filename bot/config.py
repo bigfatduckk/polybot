@@ -173,6 +173,9 @@ LIVE_DRY_RUN_ENV = "LIVE_DRY_RUN"
 # rather than false-positiving on 0.
 POLYGON_RPC = "https://polygon-bor-rpc.publicnode.com"
 POLYGON_RPC_FALLBACKS = ["https://polygon.drpc.org"]
-# Native USDC on Polygon (6 decimals) — what Polymarket settles in.
-USDC_CONTRACT = "0x3c499c542cEF5E3811F1197a409c5f9d5E6c4EbC"
+# Polymarket pUSD collateral (proxy ERC-20, 6 decimals) — what the proxy
+# actually holds. Confirmed 2026-07-21 via eth_call: balanceOf(0xc011a7…,
+# 0xfd043) = 200.0; native USDC 0x3c499… and USDC.e 0x2791… return no code /
+# empty on every RPC we have (publicnode, drpc, alchemy) — pUSD is the live one.
+USDC_CONTRACT = "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb"
 USDC_DECIMALS = 6
