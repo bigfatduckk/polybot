@@ -150,7 +150,7 @@ def sibling_markets(event_id, with_book=True):
 
 def fetch_resolution(market_id):
     with _client() as c:
-        r = c.get(f"{GAMMA_BASE}/markets", params={"id": market_id})
+        r = c.get(f"{GAMMA_BASE}/markets", params={"id": market_id, "closed": "true", "archived": "true"})
         mkts = r.json() if r.status_code == 200 else []
     if not mkts:
         return False, "none", []
