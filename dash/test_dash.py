@@ -368,9 +368,41 @@ def test_redact_truncates_long_ids():
     assert any(r["market_id"] == long_id[:8] + "…" for r in pos), "position market_id not redacted"
 
 
+def test_selfcheck_exit_zero():
+    """The __main__ self-check itself must pass (ponytail: one runnable check left behind)."""
+    import subprocess, sys
+    env = dict(os.environ, DASH_SUBPROCESS="1")
+    r = subprocess.run([sys.executable, "test_dash.py"], capture_output=True, text=True, env=env)
+    assert r.returncode == 0, f"self-check failed:\n{r.stdout}\n{r.stderr}"
+
+
+def test_headless_smoke():
+    """Reuse the DocuSmart pattern: edge --headless --dump-dom loads the page,
+    12 cards + 8 canvases present. Skipped if edge isn't on PATH."""
+    import shutil, subprocess
+    if not shutil.which("edge"):
+        print("skip test_headless_smoke (edge not found)")
+        return
+    d = tempfile.mkdtemp()
+    a, b, live = _seed_risk_calib_station(d)
+    env = dict(os.environ, PAPER_A_DB=a, PAPER_B_DB=b, LIVE_DB=live)
+    import threading
+    server = subprocess.Popen([sys.executable, "-c",
+        "import dash;dash.app.run(host='127.0.0.1',port=8766)"], env=env)
+    try:
+        out = subprocess.run(["edge","--headless","--dump-dom","http://127.0.0.1:8766/"],
+                             capture_output=True, text=True, timeout=30).stdout
+        assert out.count("card ") >= 12
+        assert out.count("<canvas") >= 8
+    finally:
+        server.terminate()
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(vars(dash).items()) if k.startswith("test_")]
     fns += [v for k, v in sorted(globals().items()) if k.startswith("test_")]
+    if os.environ.get("DASH_SUBPROCESS"):
+        fns = [fn for fn in fns if fn.__name__ != "test_selfcheck_exit_zero"]
     failed = 0
     for fn in fns:
         try:
