@@ -175,6 +175,68 @@ def test_api_drawdown_sign():
     assert dd["A"][-1]["dd"] == 0.0, f"A drawdown should be 0 at peak: {dd['A'][-1]['dd']}"
 
 
+def _seed_pipeline_dbs(d):
+    import sqlite3 as sq
+    a = sq.connect(os.path.join(d, "a.db"))
+    for s in [
+        "CREATE TABLE candidates (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, scan_id INTEGER, market_id TEXT, condition_id TEXT, side TEXT, p_model REAL, p_by_model_json TEXT, edge_after_costs REAL, lead_hours REAL, run_ids TEXT, bucket_key TEXT, effective_price REAL, blend_mean REAL, market_mid REAL, snapshot_json TEXT)",
+        "CREATE TABLE orders (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, scan_id INTEGER, market_id TEXT, token_id TEXT, side TEXT, price REAL, size REAL, maker_or_taker TEXT, edge REAL, kelly_fraction REAL, status TEXT, city TEXT, market_date TEXT, snapshot_json TEXT)",
+        "CREATE TABLE fills (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, order_id INTEGER, market_id TEXT, token_id TEXT, side TEXT, price REAL, size REAL, maker_or_taker TEXT, fill_ts TEXT, pnl REAL, snapshot_json TEXT)",
+        "CREATE TABLE pm_candidates (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, edge TEXT, scan_id INTEGER, market_id TEXT, side TEXT, p_model REAL, edge_after_costs REAL, effective_price REAL, lead_hours REAL, horizon_days REAL, meta_json TEXT)",
+        "CREATE TABLE pm_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, edge TEXT, scan_id INTEGER, market_id TEXT, token_id TEXT, side TEXT, price REAL, size REAL, maker_or_taker TEXT, edge_size REAL, kelly_fraction REAL, status TEXT, meta_json TEXT)",
+    ]:
+        a.execute(s)
+    a.execute("INSERT INTO candidates(ts,market_id,side,p_model,edge_after_costs) VALUES('2026-07-22T10:00:00+00:00','mktA','YES',0.7,0.08)")
+    a.execute("INSERT INTO candidates(ts,market_id,side,p_model,edge_after_costs) VALUES('2026-07-22T10:00:00+00:00','mktB','NO',0.3,0.02)")
+    a.execute("INSERT INTO pm_candidates(ts,edge,market_id,side,p_model,edge_after_costs) VALUES('2026-07-22T10:00:00+00:00','flb','mktF','YES',0.6,0.05)")
+    a.execute("INSERT INTO orders(ts,market_id,side,status) VALUES('2026-07-22T10:00:00+00:00','mktA','YES','open')")
+    a.commit(); a.close()
+    l = sq.connect(os.path.join(d, "live.db"))
+    for s in [
+        "CREATE TABLE live_ticks (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, job TEXT, note TEXT, detail_json TEXT)",
+        "CREATE TABLE live_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, candidate_id INTEGER, market_id TEXT, condition_id TEXT, exec_token_id TEXT, city TEXT, market_date TEXT, bucket_key TEXT, signal_side TEXT, exec_side TEXT, price REAL, size REAL, notional REAL, edge_at_exec REAL, kelly_fraction REAL, neg_risk INTEGER, dry_run INTEGER, clob_order_id TEXT, status TEXT, raw_json TEXT)",
+        "CREATE TABLE live_fills (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, order_id INTEGER, clob_trade_id TEXT, market_id TEXT, exec_token_id TEXT, side TEXT, price REAL, size REAL, fee REAL, fill_ts TEXT, raw_json TEXT)",
+    ]:
+        l.execute(s)
+    l.execute("INSERT INTO live_ticks(ts,job,note,detail_json) VALUES('2026-07-22T10:00:00+00:00','weather','skip:low_edge','{}')")
+    l.execute("INSERT INTO live_ticks(ts,job,note,detail_json) VALUES('2026-07-22T10:01:00+00:00','weather','posted','{}')")
+    l.execute("INSERT INTO live_orders(ts,market_id,signal_side,price,size,status,dry_run) VALUES('2026-07-22T10:01:00+00:00','mktL','YES',0.55,10,'posted',1)")
+    l.commit(); l.close()
+    return os.path.join(d, "a.db"), os.path.join(d, "live.db")
+
+
+def test_api_feed_positions_candidates():
+    d = tempfile.mkdtemp()
+    a, live = _seed_pipeline_dbs(d)
+    dash.PAPER_A_DB = a; dash.PAPER_B_DB = a; dash.LIVE_DB = live
+    c = dash.app.test_client()
+    feed = c.get("/api/feed?limit=10").get_json()["rows"]
+    assert any(r["note"] == "posted" for r in feed)
+    pos = c.get("/api/positions").get_json()["rows"]
+    assert any(r["market_id"] == "mktL" for r in pos)  # live posted order is open
+    cand = c.get("/api/candidates?limit=10").get_json()["rows"]
+    assert len(cand) == 3  # 2 weather + 1 flb
+    # mktA became an order; mktB did not
+    conv = {r["market_id"]: r.get("became_order") for r in cand}
+    assert conv.get("mktA") is True
+    assert conv.get("mktB") is False
+
+
+def test_api_rejections_edgedist_funnel():
+    d = tempfile.mkdtemp()
+    a, live = _seed_pipeline_dbs(d)
+    dash.PAPER_A_DB = a; dash.PAPER_B_DB = a; dash.LIVE_DB = live
+    c = dash.app.test_client()
+    rej = c.get("/api/rejections?hours=24").get_json()["rows"]
+    by = {r["reason"]: r["count"] for r in rej}
+    assert by.get("skip:low_edge") == 1
+    ed = c.get("/api/edge-dist?days=7").get_json()["buckets"]
+    assert sum(b["count"] for b in ed) == 3  # 3 candidates total
+    fn = c.get("/api/funnel?days=7").get_json()["stages"]
+    sby = {s["edge"]: s for s in fn}
+    assert sby["weather"]["candidates"] == 2 and sby["weather"]["orders"] == 1
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(vars(dash).items()) if k.startswith("test_")]
     fns += [v for k, v in sorted(globals().items()) if k.startswith("test_")]

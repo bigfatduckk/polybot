@@ -86,6 +86,19 @@ def _row(r):
     return dict(r) if r is not None else None
 
 
+def _cutoff_ts(hours):
+    # ponytail: timedelta is a module global; windowing matches Task 4 _equity_points
+    return (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds")
+
+
+def _redact(s):
+    """Redact an address/market id to a short prefix — no secrets in JSON."""
+    if not s:
+        return None
+    s = str(s)
+    return s[:8] + "…" if len(s) > 12 else s
+
+
 def _latest_halt_halted(conn_fn):
     rows, err = _query(conn_fn, "SELECT reason FROM live_halts ORDER BY id DESC LIMIT 1")
     if err or not rows:
@@ -256,3 +269,117 @@ def api_winrate():
                       "rate": round(r["won"] / r["n"], 4) if r["n"] else None})
     _wr("live", conn_live, "SELECT COUNT(*) AS n, SUM(resolved_yes) AS won FROM live_settlements WHERE pnl IS NOT NULL")
     return jsonify({"ts": now_iso(), "edges": edges})
+
+
+@app.get("/api/feed")
+def api_feed():
+    limit = clamp_int(request.args.get("limit"), 1, 500, 50)
+    rows, err = _query(conn_live,
+        "SELECT ts, job, note, detail_json FROM live_ticks ORDER BY id DESC LIMIT ?", (limit,))
+    out = []
+    for r in rows or []:
+        out.append({"ts": r["ts"], "instance": "LIVE", "job": r["job"],
+                    "action": (r["note"] or "")[:40], "note": r["note"],
+                    "detail": r["detail_json"]})
+    return jsonify({"ts": now_iso(), "rows": out, "error": err})
+
+
+@app.get("/api/positions")
+def api_positions():
+    rows, err = _query(conn_live,
+        """SELECT id, ts, market_id, city, market_date, signal_side, price, size,
+                  status, dry_run FROM live_orders
+           WHERE status IN ('posted','open','partial','filled') ORDER BY id DESC""")
+    out = []
+    for r in rows or []:
+        cost = (r["price"] or 0) * (r["size"] or 0)
+        out.append({"instance": "LIVE", "id": r["id"], "market_id": _redact(r["market_id"]),
+                    "city": r["city"], "date": r["market_date"], "side": r["signal_side"],
+                    "price": r["price"], "size": r["size"], "cost": round(cost, 2),
+                    "status": r["status"], "dry_run": bool(r["dry_run"])})
+    # paper A open orders (non-live)
+    arows, _ = _query(conn_a, "SELECT market_id, side, price, size, status FROM orders WHERE status IN ('posted','open','partial','filled') ORDER BY id DESC LIMIT 50")
+    for r in arows or []:
+        out.append({"instance": "A", "market_id": _redact(r["market_id"]), "side": r["side"],
+                    "price": r["price"], "size": r["size"], "status": r["status"], "dry_run": True})
+    return jsonify({"ts": now_iso(), "rows": out})
+
+
+@app.get("/api/candidates")
+def api_candidates():
+    limit = clamp_int(request.args.get("limit"), 1, 500, 50)
+    wrows, _ = _query(conn_a,
+        "SELECT ts, market_id, side, p_model, edge_after_costs, market_mid FROM candidates ORDER BY id DESC LIMIT ?", (limit,))
+    aorders, _ = _query(conn_a, "SELECT DISTINCT market_id FROM orders")
+    ordered_mkts = {r["market_id"] for r in aorders or []}
+    out = []
+    for r in wrows or []:
+        out.append({"instance": "A", "edge": "weather", "ts": r["ts"],
+                    "market_id": _redact(r["market_id"]), "side": r["side"],
+                    "p_model": r["p_model"], "mkt_price": r["market_mid"],
+                    "edge": r["edge_after_costs"],
+                    "became_order": r["market_id"] in ordered_mkts})
+    erows, _ = _query(conn_a,
+        "SELECT ts, edge, market_id, side, p_model, edge_after_costs FROM pm_candidates ORDER BY id DESC LIMIT ?", (limit,))
+    eorders, _ = _query(conn_a, "SELECT DISTINCT market_id FROM pm_orders")
+    e_mkts = {r["market_id"] for r in eorders or []}
+    for r in erows or []:
+        out.append({"instance": "A", "edge": r["edge"], "ts": r["ts"],
+                    "market_id": _redact(r["market_id"]), "side": r["side"],
+                    "p_model": r["p_model"], "mkt_price": None,
+                    "edge": r["edge_after_costs"],
+                    "became_order": r["market_id"] in e_mkts})
+    return jsonify({"ts": now_iso(), "rows": out})
+
+
+@app.get("/api/rejections")
+def api_rejections():
+    hours = clamp_int(request.args.get("hours"), 1, 168, 24)
+    rows, err = _query(conn_live,
+        "SELECT note, COUNT(*) AS c FROM live_ticks WHERE note LIKE 'skip:%' AND ts >= ? GROUP BY note ORDER BY c DESC",
+        (_cutoff_ts(hours),))
+    out = [{"reason": r["note"], "count": r["c"]} for r in rows or []]
+    return jsonify({"ts": now_iso(), "rows": out, "error": err})
+
+
+@app.get("/api/edge-dist")
+def api_edge_dist():
+    days = clamp_int(request.args.get("days"), 1, 365, 7)
+    cut = _cutoff_ts(days * 24)
+    wrows, _ = _query(conn_a, "SELECT edge_after_costs FROM candidates WHERE ts >= ?", (cut,))
+    erows, _ = _query(conn_a, "SELECT edge_after_costs FROM pm_candidates WHERE ts >= ?", (cut,))
+    vals = [r["edge_after_costs"] for r in (wrows or []) if r["edge_after_costs"] is not None]
+    vals += [r["edge_after_costs"] for r in (erows or []) if r["edge_after_costs"] is not None]
+    # 0.02 buckets from 0 to 0.30
+    buckets = {}
+    for v in vals:
+        b = round((v // 0.02) * 0.02, 2)
+        buckets[b] = buckets.get(b, 0) + 1
+    out = [{"bucket": k, "count": v} for k, v in sorted(buckets.items())]
+    return jsonify({"ts": now_iso(), "buckets": out})
+
+
+@app.get("/api/funnel")
+def api_funnel():
+    days = clamp_int(request.args.get("days"), 1, 365, 7)
+    cut = _cutoff_ts(days * 24)
+    stages = []
+    def _stage(label, conn_fn, csql, osql, fsql):
+        c, _ = _query(conn_fn, csql, (cut,))
+        o, _ = _query(conn_fn, osql, (cut,))
+        f, _ = _query(conn_fn, fsql, (cut,))
+        stages.append({"edge": label, "candidates": (c[0]["n"] if c else 0),
+                       "orders": (o[0]["n"] if o else 0), "fills": (f[0]["n"] if f else 0)})
+    _stage("weather", conn_a,
+           "SELECT COUNT(*) AS n FROM candidates WHERE ts >= ?",
+           "SELECT COUNT(*) AS n FROM orders WHERE ts >= ?",
+           "SELECT COUNT(*) AS n FROM fills WHERE ts >= ?")
+    erows, _ = _query(conn_a, "SELECT DISTINCT edge FROM pm_candidates WHERE ts >= ?", (cut,))
+    for r in erows or []:
+        e = r["edge"]
+        c, _ = _query(conn_a, "SELECT COUNT(*) AS n FROM pm_candidates WHERE edge=? AND ts>=?", (e, cut))
+        o, _ = _query(conn_a, "SELECT COUNT(*) AS n FROM pm_orders WHERE edge=? AND ts>=?", (e, cut))
+        f, _ = _query(conn_a, "SELECT COUNT(*) AS n FROM pm_fills WHERE edge=? AND ts>=?", (e, cut))
+        stages.append({"edge": e, "candidates": (c[0]["n"] if c else 0),
+                       "orders": (o[0]["n"] if o else 0), "fills": (f[0]["n"] if f else 0)})
+    return jsonify({"ts": now_iso(), "stages": stages})
