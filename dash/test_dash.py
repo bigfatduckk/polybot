@@ -139,10 +139,11 @@ def test_api_edge_pnl_and_winrate():
     dash.PAPER_A_DB, dash.PAPER_B_DB, dash.LIVE_DB = a, b, live
     c = dash.app.test_client()
     ep = c.get("/api/edge-pnl").get_json()
-    by = {e["edge"]: e["pnl"] for e in ep["edges"]}
-    assert by["weather"] == 5.0      # A weather 2+3
-    assert by["flb"] == -1.0
-    assert by["live"] == -2.0
+    by = {(e["edge"], e["instance"]): e["pnl"] for e in ep["edges"]}
+    assert by[("weather", "A")] == 5.0      # A weather 2+3
+    assert by[("weather", "B")] == 5.0      # B weather 5.0
+    assert by[("flb", "A")] == -1.0
+    assert by[("live", "LIVE")] == -2.0
     wr = c.get("/api/winrate").get_json()
     wby = {e["edge"]: e for e in wr["edges"]}
     assert wby["flb"]["won"] == 0 and wby["flb"]["total"] == 1
@@ -161,6 +162,17 @@ def test_api_equity_window_filters_old_rows():
     assert j30["series"]["A"][-1]["cum"] == 4.0, "past row leaked into 30-day window"
     j365 = dash.app.test_client().get("/api/equity?days=365").get_json()
     assert j365["series"]["A"][-1]["cum"] == 104.0, "past row missing from 365-day window"
+
+
+def test_api_drawdown_sign():
+    d = tempfile.mkdtemp()
+    a, b, live = _seed_pnl_dbs(d)
+    dash.PAPER_A_DB, dash.PAPER_B_DB, dash.LIVE_DB = a, b, live
+    dd = dash.app.test_client().get("/api/drawdown?days=30").get_json()["series"]
+    # LIVE single point cum -2.0, cummax starts 0.0 -> drawdown +2.0 (below peak)
+    assert dd["LIVE"][-1]["dd"] == 2.0, f"LIVE drawdown sign wrong: {dd['LIVE'][-1]['dd']}"
+    # A one day cum 4.0 -> at peak, drawdown 0.0
+    assert dd["A"][-1]["dd"] == 0.0, f"A drawdown should be 0 at peak: {dd['A'][-1]['dd']}"
 
 
 if __name__ == "__main__":

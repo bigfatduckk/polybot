@@ -214,7 +214,7 @@ def api_drawdown():
         rows = []
         for p in pts:
             cummax = max(cummax, p["cum"])
-            rows.append({"day": p["day"], "dd": round(p["cum"] - cummax, 4)})
+            rows.append({"day": p["day"], "dd": round(cummax - p["cum"], 4)})
         dd[name] = rows
     return jsonify({"ts": now_iso(), "series": dd})
 
