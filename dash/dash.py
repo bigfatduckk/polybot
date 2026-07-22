@@ -161,19 +161,21 @@ def _hkt_day(ts):
         return None
 
 
-@app.get("/api/equity")
-def api_equity():
-    days = clamp_int(request.args.get("days"), 1, 365, 30)
+def _equity_points(days):
+    """Windowed cumulative realized PnL by HKT day, per instance. Trailing `days` window."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
     series = {}
     for name, fn, tables in [
-        ("A", conn_a, [("settlements", None), ("pm_settlements", None)]),
-        ("B", conn_b, [("settlements", None)]),
-        ("LIVE", conn_live, [("live_settlements", None)]),
+        ("A", conn_a, ["settlements", "pm_settlements"]),
+        ("B", conn_b, ["settlements"]),
+        ("LIVE", conn_live, ["live_settlements"]),
     ]:
         by_day = {}
-        for tbl, _ in tables:
+        for tbl in tables:
             rows, _ = _pnl_rows(fn, tbl)
             for ts, pnl, _rv in rows:
+                if ts < cutoff:
+                    continue
                 day = _hkt_day(ts)
                 if day is None:
                     continue
@@ -185,19 +187,27 @@ def api_equity():
             cum += pnl
             pts.append({"day": day, "pnl": round(pnl, 4), "cum": round(cum, 4)})
         series[name] = pts
-    return jsonify({"ts": now_iso(), "series": series})
+    return series
+
+
+@app.get("/api/equity")
+def api_equity():
+    days = clamp_int(request.args.get("days"), 1, 365, 30)
+    return jsonify({"ts": now_iso(), "series": _equity_points(days)})
 
 
 @app.get("/api/daily-pnl")
 def api_daily_pnl():
-    series = api_equity().get_json()["series"]
+    days = clamp_int(request.args.get("days"), 1, 365, 30)
+    series = _equity_points(days)
     out = {name: [{"day": p["day"], "pnl": p["pnl"]} for p in pts] for name, pts in series.items()}
     return jsonify({"ts": now_iso(), "series": out})
 
 
 @app.get("/api/drawdown")
 def api_drawdown():
-    series = api_equity().get_json()["series"]
+    days = clamp_int(request.args.get("days"), 1, 365, 30)
+    series = _equity_points(days)
     dd = {}
     for name, pts in series.items():
         cummax = 0.0

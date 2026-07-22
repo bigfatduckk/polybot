@@ -149,6 +149,20 @@ def test_api_edge_pnl_and_winrate():
     assert wby["weather"]["won"] == 2 and wby["weather"]["total"] == 2
 
 
+def test_api_equity_window_filters_old_rows():
+    d = tempfile.mkdtemp()
+    a, b, live = _seed_pnl_dbs(d)
+    dash.PAPER_A_DB, dash.PAPER_B_DB, dash.LIVE_DB = a, b, live
+    import sqlite3 as sq
+    c = sq.connect(a)
+    c.execute("INSERT INTO settlements(ts,pnl,resolved_yes) VALUES('2026-01-01T00:00:00+00:00',100.0,1)")
+    c.commit(); c.close()
+    j30 = dash.app.test_client().get("/api/equity?days=30").get_json()
+    assert j30["series"]["A"][-1]["cum"] == 4.0, "past row leaked into 30-day window"
+    j365 = dash.app.test_client().get("/api/equity?days=365").get_json()
+    assert j365["series"]["A"][-1]["cum"] == 104.0, "past row missing from 365-day window"
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(vars(dash).items()) if k.startswith("test_")]
     fns += [v for k, v in sorted(globals().items()) if k.startswith("test_")]
