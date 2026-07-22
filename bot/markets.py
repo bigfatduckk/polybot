@@ -156,7 +156,13 @@ def fetch_resolution(market_id):
         return False, "none", []
     mkt = mkts[0]
     closed = bool(mkt.get("closed"))
-    prices = mkt.get("outcomePrices") or []
+    prices = mkt.get("outcomePrices")
+    if isinstance(prices, str):
+        try:
+            prices = json.loads(prices)
+        except (TypeError, ValueError):
+            prices = []
+    prices = prices or []
     try:
         prices = [float(p) for p in prices]
     except (TypeError, ValueError):
