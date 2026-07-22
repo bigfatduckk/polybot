@@ -217,6 +217,12 @@ def init_edge_db():
             p_model REAL, spot REAL, iv REAL, prior_close REAL, tau_years REAL,
             buy_edge REAL, sell_edge REAL
         );
+        CREATE TABLE IF NOT EXISTS calib_snapshots (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, edge TEXT,
+          brier_model REAL, brier_market REAL, reliability_maxdev_pp REAL,
+          n_signals INTEGER, gate_pass INTEGER, detail_json TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_calib_edge_ts ON calib_snapshots(edge, ts);
         CREATE INDEX IF NOT EXISTS idx_usud_quotes_mkt ON usud_quotes(market_id);
         CREATE INDEX IF NOT EXISTS idx_pm_snaps_market ON pm_snapshots(market_id);
         CREATE INDEX IF NOT EXISTS idx_pm_orders_status ON pm_orders(status);
