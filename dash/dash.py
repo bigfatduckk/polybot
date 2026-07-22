@@ -153,17 +153,24 @@ def api_health():
     }
 
     # live
-    halted, _ = _latest_halt_halted(conn_live)
-    rows, _ = _query(conn_live, "SELECT usdc, matic FROM live_balances ORDER BY id DESC LIMIT 1")
+    halted, halt_err = _latest_halt_halted(conn_live)
+    rows, bal_err = _query(conn_live, "SELECT usdc, matic FROM live_balances ORDER BY id DESC LIMIT 1")
     gas = pusd = None
     if rows:
         pusd = rows[0]["usdc"]
         gas = rows[0]["matic"]
-    out["instances"]["LIVE"] = {
-        "status": "halted" if halted else "running",
-        "bankroll": 200.0, "gas": gas, "pusd": pusd,
-        "last_tick_age": _last_tick_age(conn_live), "halted": halted,
-    }
+    live_err = bal_err or halt_err
+    if live_err:
+        out["instances"]["LIVE"] = {
+            "status": "unreachable", "bankroll": None, "gas": None, "pusd": None,
+            "last_tick_age": None, "halted": False, "error": live_err,
+        }
+    else:
+        out["instances"]["LIVE"] = {
+            "status": "halted" if halted else "running",
+            "bankroll": pusd, "gas": gas, "pusd": pusd,
+            "last_tick_age": _last_tick_age(conn_live), "halted": halted,
+        }
     return jsonify(out)
 
 
@@ -327,7 +334,7 @@ def api_candidates():
         out.append({"instance": "A", "edge": "weather", "ts": r["ts"],
                     "market_id": _redact(r["market_id"]), "side": r["side"],
                     "p_model": r["p_model"], "mkt_price": r["market_mid"],
-                    "edge": r["edge_after_costs"],
+                    "edge_val": r["edge_after_costs"],
                     "became_order": r["market_id"] in ordered_mkts})
     erows, _ = _query(conn_a,
         "SELECT ts, edge, market_id, side, p_model, edge_after_costs FROM pm_candidates ORDER BY id DESC LIMIT ?", (limit,))
@@ -337,7 +344,7 @@ def api_candidates():
         out.append({"instance": "A", "edge": r["edge"], "ts": r["ts"],
                     "market_id": _redact(r["market_id"]), "side": r["side"],
                     "p_model": r["p_model"], "mkt_price": None,
-                    "edge": r["edge_after_costs"],
+                    "edge_val": r["edge_after_costs"],
                     "became_order": r["market_id"] in e_mkts})
     return jsonify({"ts": now_iso(), "rows": out})
 

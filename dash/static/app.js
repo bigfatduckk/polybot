@@ -9,7 +9,7 @@ function setDot(id, kind){ const el=document.getElementById(id); if(el) el.class
 
 function renderHealth(h){
   for(const [name,i] of Object.entries(h.instances)){
-    const dotKind = i.halted ? 'crit' : (name==='LIVE' && i.last_tick_age!=null && i.last_tick_age>300 ? 'warn' : 'ok');
+    const dotKind = (i.halted || i.status === 'unreachable') ? 'crit' : (name==='LIVE' && i.last_tick_age!=null && i.last_tick_age>300 ? 'warn' : 'ok');
     setDot('dot-'+name, dotKind);
   }
   const live = h.instances.LIVE || {};
@@ -39,8 +39,8 @@ function renderPositions(p){
 function renderCandidates(c){
   const el=document.getElementById('candidates-table'); if(!c||!c.rows) return;
   const rows=c.rows;
-  el.innerHTML = `<table><thead><tr><th>Inst</th><th>Market</th><th>Side</th><th>p</th><th>edge</th><th>order</th></tr></thead><tbody>${
-    rows.map(r=>`<tr><td>${r.instance}</td><td>${r.market_id||''}</td><td>${r.side||''}</td><td>${r.p_model!=null?(+r.p_model).toFixed(2):'—'}</td><td>${r.edge!=null?(+r.edge).toFixed(3):'—'}</td><td style="color:${r.became_order?'var(--green)':'var(--dim)'}">${r.became_order?'Y':'·'}</td></tr>`).join('') || '<tr><td colspan="6">no candidates</td></tr>'
+  el.innerHTML = `<table><thead><tr><th>Inst</th><th>Edge</th><th>Market</th><th>Side</th><th>p</th><th>edge</th><th>→</th></tr></thead><tbody>${
+    rows.map(r=>`<tr><td>${r.instance}</td><td>${r.edge||'—'}</td><td>${r.market_id||''}</td><td>${r.side||''}</td><td>${r.p_model!=null?(+r.p_model).toFixed(2):'—'}</td><td>${r.edge_val!=null?(+r.edge_val).toFixed(3):'—'}</td><td style="color:${r.became_order?'var(--green)':'var(--dim)'}">${r.became_order?'Y':'·'}</td></tr>`).join('') || '<tr><td colspan="7">no candidates</td></tr>'
   }</tbody></table>`;
 }
 

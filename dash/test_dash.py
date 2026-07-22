@@ -218,6 +218,8 @@ def test_api_feed_positions_candidates():
     assert any(r["market_id"] == "mktL" for r in pos)  # live posted order is open
     cand = c.get("/api/candidates?limit=10").get_json()["rows"]
     assert len(cand) == 3  # 2 weather + 1 flb
+    assert any(r["edge"] == "weather" for r in cand)  # edge name preserved (not numeric)
+    assert "edge_val" in cand[0]  # numeric edge lives under edge_val
     # mktA became an order; mktB did not
     conv = {r["market_id"]: r.get("became_order") for r in cand}
     assert conv.get("mktA") is True
@@ -343,6 +345,7 @@ def test_degraded_live_db_missing():
     c = dash.app.test_client()
     h = c.get("/api/health").get_json()
     assert h["instances"]["LIVE"]["halted"] is False  # no halts row -> not halted, not a crash
+    assert h["instances"]["LIVE"]["status"] == "unreachable"  # spec §8: live DB down = red, not green
     # paper panels still work
     assert c.get("/api/edge-pnl").get_json()["edges"]  # paper A weather row present
     # risk endpoint survives (open_positions 0, halted False)
