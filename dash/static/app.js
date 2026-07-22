@@ -36,6 +36,14 @@ function renderPositions(p){
   }</tbody></table>`;
 }
 
+function renderCandidates(c){
+  const el=document.getElementById('candidates-table'); if(!c||!c.rows) return;
+  const rows=c.rows;
+  el.innerHTML = `<table><thead><tr><th>Inst</th><th>Market</th><th>Side</th><th>p</th><th>edge</th><th>order</th></tr></thead><tbody>${
+    rows.map(r=>`<tr><td>${r.instance}</td><td>${r.market_id||''}</td><td>${r.side||''}</td><td>${r.p_model!=null?(+r.p_model).toFixed(2):'—'}</td><td>${r.edge!=null?(+r.edge).toFixed(3):'—'}</td><td style="color:${r.became_order?'var(--green)':'var(--dim)'}">${r.became_order?'Y':'·'}</td></tr>`).join('') || '<tr><td colspan="6">no candidates</td></tr>'
+  }</tbody></table>`;
+}
+
 function renderRisk(r){
   const el=document.getElementById('risk-gauges'); if(!r) return;
   const bar=(label,val,max,frac)=>{
@@ -124,11 +132,12 @@ function barChart(id, config){
 }
 
 async function pollCharts(){
-  const [eq,dp,ep,wr,rj,ed,cal,sb] = await Promise.all([
+  const [eq,dp,ep,wr,rj,ed,cal,sb,cd] = await Promise.all([
     getJSON('/api/equity?days=30'),getJSON('/api/daily-pnl?days=30'),
     getJSON('/api/edge-pnl'),getJSON('/api/winrate'),
     getJSON('/api/rejections?hours=24'),getJSON('/api/edge-dist?days=7'),
-    getJSON('/api/calib'),getJSON('/api/station-bias?days=30')]);
+    getJSON('/api/calib'),getJSON('/api/station-bias?days=30'),
+    getJSON('/api/candidates?limit=50')]);
   if(eq && eq.error) markErr('card-equity','chart-equity');
   else if(eq){ clearErr('card-equity'); lineChart('chart-equity',
     Object.entries(eq.series).map(([n,pts])=>({label:n,data:pts.map(p=>p.cum),borderColor:INST_COLOR[n],borderWidth:1.5,pointRadius:0})),
@@ -167,6 +176,8 @@ async function pollCharts(){
   else if(sb&&sb.cities){ clearErr('card-station-bias'); lineChart('chart-station-bias',
       sb.cities.map(c=>({label:c.city,data:c.points.map(p=>p.residual),borderColor:INST_COLOR.A,pointRadius:0,borderWidth:1})),
       (sb.cities[0]?.points||[]).map(p=>p.ts)); }
+  if(cd && cd.error) markErr('card-candidates','candidates-table');
+  else if(cd){ clearErr('card-candidates'); renderCandidates(cd); }
 }
 
 pollState(); pollCharts();
