@@ -64,7 +64,7 @@ def _query(conn_fn, sql, args=()):
     """Run sql read-only; retry once on WAL lock; never raise. Returns (rows, error)."""
     try:
         conn = conn_fn()
-    except sqlite3.OperationalError as e:
+    except sqlite3.Error as e:
         return [], f"db-unreachable: {e}"
     try:
         try:
@@ -115,7 +115,6 @@ def api_health():
     # paper A
     rows, _ = _query(conn_a, "SELECT v FROM meta WHERE k='bankroll'")
     a_bank = float(rows[0]["v"]) if rows and rows[0]["v"] else None
-    rows, _ = _query(conn_a, "SELECT MAX(ts) AS m FROM scans")
     a_age = _last_tick_age(conn_a, "scans")  # paper uses scans as its tick log
     out["instances"]["A"] = {
         "status": "running", "bankroll": a_bank, "gas": None, "pusd": None,

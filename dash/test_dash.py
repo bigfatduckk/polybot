@@ -88,6 +88,8 @@ def test_api_health():
     assert li["pusd"] == 200.0
     assert li["halted"] is True  # live_halts latest row = telegram:set
     assert "A" in j["instances"] and j["instances"]["A"]["bankroll"] == 1000.0
+    for inst in ("A", "B", "LIVE"):
+        assert j["instances"][inst]["last_tick_age"] is not None, f"{inst} last_tick_age was None"
 
 
 if __name__ == "__main__":
