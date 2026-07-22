@@ -190,6 +190,8 @@ def _seed_pipeline_dbs(d):
     a.execute("INSERT INTO candidates(ts,market_id,side,p_model,edge_after_costs) VALUES('2026-07-22T10:00:00+00:00','mktB','NO',0.3,0.02)")
     a.execute("INSERT INTO pm_candidates(ts,edge,market_id,side,p_model,edge_after_costs) VALUES('2026-07-22T10:00:00+00:00','flb','mktF','YES',0.6,0.05)")
     a.execute("INSERT INTO orders(ts,market_id,side,status) VALUES('2026-07-22T10:00:00+00:00','mktA','YES','open')")
+    a.execute("CREATE TABLE pm_fills (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, edge TEXT, order_id INTEGER, market_id TEXT, token_id TEXT, side TEXT, price REAL, size REAL, maker_or_taker TEXT, fill_ts TEXT, pnl REAL, meta_json TEXT)")
+    a.execute("INSERT INTO pm_fills(ts,edge,market_id) VALUES('2026-07-22T10:00:00+00:00','flb','mktF')")
     a.commit(); a.close()
     l = sq.connect(os.path.join(d, "live.db"))
     for s in [
@@ -235,6 +237,7 @@ def test_api_rejections_edgedist_funnel():
     fn = c.get("/api/funnel?days=7").get_json()["stages"]
     sby = {s["edge"]: s for s in fn}
     assert sby["weather"]["candidates"] == 2 and sby["weather"]["orders"] == 1
+    assert sby["flb"]["fills"] == 1, "flb funnel fills stage should count the seeded pm_fill"
 
 
 def _seed_risk_calib_station(d):
@@ -262,8 +265,10 @@ def _seed_risk_calib_station(d):
         "CREATE TABLE station_obs (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, city TEXT, date TEXT, observed_high REAL, blend_mean REAL, residual REAL, source TEXT, snapshot_json TEXT)",
         "CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT)",
         "CREATE TABLE scans (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, job TEXT, mode TEXT, note TEXT, snapshot_json TEXT)",
+        "CREATE TABLE settlements (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, market_id TEXT, condition_id TEXT, city TEXT, date TEXT, observed_high REAL, bucket_key TEXT, resolved_yes INTEGER, pnl REAL, snapshot_json TEXT)",
     ]:
         a.execute(s)
+    a.execute("INSERT INTO settlements(ts,pnl,resolved_yes) VALUES('2026-07-22T10:00:00+00:00',5.0,1)")  # weather row so /api/edge-pnl is non-empty in degraded test
     a.execute("INSERT INTO calib_snapshots(ts,edge,brier_model,brier_market,reliability_maxdev_pp,n_signals,gate_pass,detail_json) VALUES('2026-07-22T06:30:00+00:00','weather',0.17,0.24,25.0,658,0,'{}')")
     a.execute("INSERT INTO calib_snapshots(ts,edge,brier_model,brier_market,reliability_maxdev_pp,n_signals,gate_pass,detail_json) VALUES('2026-07-21T06:30:00+00:00','weather',0.18,0.25,26.0,650,0,'{}')")
     a.execute("INSERT INTO station_obs(ts,city,residual) VALUES('2026-07-22T10:00:00+00:00','HongKong',0.3)")
@@ -303,6 +308,64 @@ def test_api_state_aggregate():
     for k in ("health", "feed", "positions", "risk"):
         assert k in s
     assert s["risk"]["halted"] is True
+
+
+_SECRET_PATTERNS = [
+    "0x" + "a" * 40,  # 64-hex private key shape (lowercase); real key would match
+    "sk-ant-",
+    "POLY_PRIVATE_KEY",
+    "TELEGRAM_TOKEN",
+    "seed",
+    "167.172.42.135",  # proxy URL
+]
+
+
+def test_no_secrets_in_payloads():
+    d = tempfile.mkdtemp()
+    a, b, live = _seed_risk_calib_station(d)  # reuse a full fixture
+    dash.PAPER_A_DB, dash.PAPER_B_DB, dash.LIVE_DB = a, b, live
+    c = dash.app.test_client()
+    for ep in ["/api/state", "/api/health", "/api/equity", "/api/daily-pnl",
+               "/api/drawdown", "/api/edge-pnl", "/api/winrate", "/api/feed",
+               "/api/positions", "/api/candidates", "/api/rejections",
+               "/api/edge-dist", "/api/funnel", "/api/risk", "/api/calib",
+               "/api/station-bias"]:
+        body = c.get(ep).get_data(as_text=True)
+        for pat in _SECRET_PATTERNS:
+            assert pat not in body, f"secret pattern {pat!r} leaked in {ep}"
+
+
+def test_degraded_live_db_missing():
+    d = tempfile.mkdtemp()
+    a, b, _ = _seed_risk_calib_station(d)
+    dash.PAPER_A_DB, dash.PAPER_B_DB = a, b
+    dash.LIVE_DB = "/nonexistent/live.db"  # unreachable
+    c = dash.app.test_client()
+    h = c.get("/api/health").get_json()
+    assert h["instances"]["LIVE"]["halted"] is False  # no halts row -> not halted, not a crash
+    # paper panels still work
+    assert c.get("/api/edge-pnl").get_json()["edges"]  # paper A weather row present
+    # risk endpoint survives (open_positions 0, halted False)
+    r = c.get("/api/risk").get_json()
+    assert r["open_positions"] == 0 and r["halted"] is False
+
+
+def test_redact_truncates_long_ids():
+    d = tempfile.mkdtemp()
+    a, live = _seed_pipeline_dbs(d)
+    dash.PAPER_A_DB, dash.PAPER_B_DB, dash.LIVE_DB = a, a, live
+    import sqlite3 as sq
+    c = sq.connect(a)
+    long_id = "0x" + "a" * 40  # 42 chars, > 12 -> _redact returns s[:8] + "…"
+    c.execute("INSERT INTO candidates(ts,market_id,side,p_model,edge_after_costs,market_mid) "
+              "VALUES('2026-07-22T10:00:00+00:00',?,'YES',0.7,0.08,0.5)", (long_id,))
+    c.execute("INSERT INTO orders(ts,market_id,side,status) "
+              "VALUES('2026-07-22T10:00:00+00:00',?,'YES','open')", (long_id,))
+    c.commit(); c.close()
+    cand = dash.app.test_client().get("/api/candidates?limit=50").get_json()["rows"]
+    assert any(r["market_id"] == long_id[:8] + "…" for r in cand), "candidate market_id not redacted"
+    pos = dash.app.test_client().get("/api/positions").get_json()["rows"]
+    assert any(r["market_id"] == long_id[:8] + "…" for r in pos), "position market_id not redacted"
 
 
 if __name__ == "__main__":
