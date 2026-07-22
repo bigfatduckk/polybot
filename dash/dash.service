@@ -1,0 +1,16 @@
+[Unit]
+Description=Polymarket Bot Dashboard (read-only)
+After=network.target
+
+[Service]
+User=dash
+WorkingDirectory=/root/polybot/dash
+Environment=PAPER_A_DB=/root/polybot/bot/polymarket_bot.db
+Environment=PAPER_B_DB=/root/polybot/bot/polymarket_bot_B.db
+Environment=LIVE_DB=/root/polybot/bot/polymarket_bot_live.db
+ExecStart=/usr/bin/python3 /root/polybot/dash/dash.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

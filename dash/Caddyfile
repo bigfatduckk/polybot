@@ -1,0 +1,14 @@
+# polybot dashboard — HTTPS, basic-auth, /api reverse-proxy, no-store.
+# Replace DASH.EXAMPLE with your domain (or use the droplet IP with self-signed + pin).
+# ponytail: no IP allowlist in v1 — basic-auth covers mobile on varying IPs; allowlist is v2.
+
+DASH.EXAMPLE {
+  encode zstd gzip
+  basicauth {
+    marcus $2a$14$REPLACE_WITH_bcrypt_hash  # generate: caddy hash-password
+  }
+  header /api/* Cache-Control no-store
+  reverse_proxy /api/* 127.0.0.1:8000
+  root * /root/polybot/dash
+  file_server
+}

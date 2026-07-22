@@ -470,3 +470,7 @@ def api_state():
     risk = api_risk().get_json()
     return jsonify({"ts": now_iso(), "health": health, "feed": feed,
                     "positions": positions, "risk": risk})
+
+
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=8000)
