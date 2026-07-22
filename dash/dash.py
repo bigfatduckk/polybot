@@ -54,3 +54,92 @@ def clamp_int(value, lo, hi, default):
 
 # Task 2 appends store_calib helpers here when reused; otherwise standalone.
 # Task 3+ appends Flask app + endpoint handlers below.
+import time
+from flask import Flask, jsonify, request
+
+app = Flask(__name__)
+
+
+def _query(conn_fn, sql, args=()):
+    """Run sql read-only; retry once on WAL lock; never raise. Returns (rows, error)."""
+    try:
+        conn = conn_fn()
+    except sqlite3.OperationalError as e:
+        return [], f"db-unreachable: {e}"
+    try:
+        try:
+            rows = conn.execute(sql, args).fetchall()
+            return rows, None
+        except sqlite3.OperationalError as e:
+            if "locked" in str(e).lower():
+                time.sleep(0.1)
+                rows = conn.execute(sql, args).fetchall()
+                return rows, None
+            return [], f"query-error: {e}"
+    except Exception as e:
+        return [], f"query-error: {e}"
+    finally:
+        conn.close()
+
+
+def _row(r):
+    return dict(r) if r is not None else None
+
+
+def _latest_halt_halted(conn_fn):
+    rows, err = _query(conn_fn, "SELECT reason FROM live_halts ORDER BY id DESC LIMIT 1")
+    if err or not rows:
+        return False, err
+    reason = (rows[0]["reason"] or "").lower()
+    return ("clear" not in reason and "unhalt" not in reason), None
+
+
+def _last_tick_age(conn_fn, table="live_ticks"):
+    rows, err = _query(conn_fn, f"SELECT MAX(ts) AS m FROM {table}")
+    if err or not rows or rows[0]["m"] is None:
+        return None
+    from datetime import datetime
+    try:
+        then = datetime.fromisoformat(rows[0]["m"])
+        if then.tzinfo is None:
+            then = then.replace(tzinfo=timezone.utc)
+        return int((datetime.now(timezone.utc) - then).total_seconds())
+    except Exception:
+        return None
+
+
+@app.get("/api/health")
+def api_health():
+    out = {"ts": now_iso(), "instances": {}}
+
+    # paper A
+    rows, _ = _query(conn_a, "SELECT v FROM meta WHERE k='bankroll'")
+    a_bank = float(rows[0]["v"]) if rows and rows[0]["v"] else None
+    rows, _ = _query(conn_a, "SELECT MAX(ts) AS m FROM scans")
+    a_age = _last_tick_age(conn_a, "scans")  # paper uses scans as its tick log
+    out["instances"]["A"] = {
+        "status": "running", "bankroll": a_bank, "gas": None, "pusd": None,
+        "last_tick_age": a_age, "halted": False,
+    }
+
+    # paper B
+    rows, _ = _query(conn_b, "SELECT v FROM meta WHERE k='bankroll'")
+    b_bank = float(rows[0]["v"]) if rows and rows[0]["v"] else None
+    out["instances"]["B"] = {
+        "status": "running", "bankroll": b_bank, "gas": None, "pusd": None,
+        "last_tick_age": _last_tick_age(conn_b, "scans"), "halted": False,
+    }
+
+    # live
+    halted, _ = _latest_halt_halted(conn_live)
+    rows, _ = _query(conn_live, "SELECT usdc, matic FROM live_balances ORDER BY id DESC LIMIT 1")
+    gas = pusd = None
+    if rows:
+        pusd = rows[0]["usdc"]
+        gas = rows[0]["matic"]
+    out["instances"]["LIVE"] = {
+        "status": "halted" if halted else "running",
+        "bankroll": 200.0, "gas": gas, "pusd": pusd,
+        "last_tick_age": _last_tick_age(conn_live), "halted": halted,
+    }
+    return jsonify(out)
