@@ -24,7 +24,6 @@ from config import (
     LIVE_CONSECUTIVE_LOSS_HALT,
     LIVE_DAILY_LOSS_HALT_FRAC,
     LIVE_DB_PATH,
-    LIVE_MAX_OPEN_POSITIONS,
     LIVE_MAX_POSITIONS_PER_REGION_DAY,
     LIVE_MIN_EDGE,
     LIVE_PER_TRADE_CAP_ABS,
@@ -333,8 +332,6 @@ def live_risk_check(order_spec, state):
         return LiveRiskVerdict(False, "daily loss halt")
     if state.consecutive_losses >= LIVE_CONSECUTIVE_LOSS_HALT:
         return LiveRiskVerdict(False, "consecutive loss halt")
-    if len(state.open_positions) >= LIVE_MAX_OPEN_POSITIONS:
-        return LiveRiskVerdict(False, f"max open positions {LIVE_MAX_OPEN_POSITIONS}")
     sig = order_spec.signal
     region_count = sum(
         1 for p in state.open_positions

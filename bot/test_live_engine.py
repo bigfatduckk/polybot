@@ -198,15 +198,15 @@ def _sig(side="buy", p=0.60, fee_rate=0.0, fees=False, city="Seoul", mdate="2026
 
 def test_sizing_quarter_kelly_capped_buy():
     notional, shares, edge = le.size_signal(_sig(side="buy", p=0.60), walked_exec_price=0.50)
-    assert abs(notional - 10.0) < 1e-9
-    assert abs(shares - 20.0) < 1e-9
+    assert abs(notional - 50.0) < 1e-9
+    assert abs(shares - 100.0) < 1e-9
     assert abs(edge - 0.10) < 1e-9
 
 
 def test_sizing_quarter_kelly_capped_sell():
     notional, shares, edge = le.size_signal(_sig(side="sell", p=0.30), walked_exec_price=0.60)
-    assert abs(notional - 10.0) < 1e-9
-    assert abs(shares - 10.0 / 0.60) < 1e-6
+    assert abs(notional - 50.0) < 1e-9
+    assert abs(shares - 50.0 / 0.60) < 1e-6
     assert abs(edge - ((1.0 - 0.30) - 0.60)) < 1e-9
 
 
@@ -230,7 +230,7 @@ def _spec(side="buy", p=0.60, exec_price=0.50, market_id="m1", city="Seoul",
 
 
 def _state(realized_today=0.0, consec=0, opens=None):
-    return le.LiveState(bankroll=200.0, realized_pnl_today=realized_today,
+    return le.LiveState(bankroll=1000.0, realized_pnl_today=realized_today,
                         consecutive_losses=consec, open_positions=opens or [])
 
 
@@ -238,20 +238,14 @@ def test_risk_approves_clean_buy():
     assert le.live_risk_check(_spec(), _state()).approved
 
 
-def test_risk_daily_loss_halt_at_20():
-    v = le.live_risk_check(_spec(), _state(realized_today=-20.0))
+def test_risk_daily_loss_halt_at_100():
+    v = le.live_risk_check(_spec(), _state(realized_today=-100.0))
     assert not v.approved and "daily loss" in v.reason
 
 
 def test_risk_consecutive_loss_halt_6():
     v = le.live_risk_check(_spec(), _state(consec=6))
     assert not v.approved and "consecutive" in v.reason
-
-
-def test_risk_max_open_5():
-    opens = [{"market_id": f"mx{i}", "city": "Seoul", "market_date": "2026-07-20"} for i in range(5)]
-    v = le.live_risk_check(_spec(market_id="mNEW"), _state(opens=opens))
-    assert not v.approved and "max open" in v.reason
 
 
 def test_risk_region_day_cap_3():
@@ -278,7 +272,7 @@ def test_risk_halt_live_file_blocks(tmp_path, monkeypatch):
 def test_risk_per_trade_cap_blocks_oversize():
     sig = _sig(p=0.60)
     spec = le.LiveOrderSpec(signal=sig, exec_token_id="t", exec_side="BUY", price=0.50,
-                            size=100.0, notional=50.0, edge_at_exec=0.10, kelly_fraction=0.0)
+                            size=120.0, notional=60.0, edge_at_exec=0.10, kelly_fraction=0.0)
     v = le.live_risk_check(spec, _state())
     assert not v.approved and "per-trade cap" in v.reason
 

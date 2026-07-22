@@ -412,12 +412,12 @@ def api_funnel():
 # Risk constants mirrored from bot/config.py (LIVE_* values, verified 2026-07-22).
 # Mirrored as literals so the dashboard does not import the bot tree (no env reads).
 RISK = {
-    "max_open": 5,                  # LIVE_MAX_OPEN_POSITIONS
+    "max_open": 20,                 # bankroll-bound ceiling (LIVE_MAX_OPEN_POSITIONS total cap REMOVED 2026-07-23 to mirror paper; = LIVE_BANKROLL/LIVE_PER_TRADE_CAP_ABS = 1000/50)
     "max_consec": 6,                # LIVE_CONSECUTIVE_LOSS_HALT
-    "daily_loss_halt": 20.0,        # LIVE_DAILY_LOSS_HALT_FRAC * LIVE_BANKROLL = 0.10*200
-    "per_trade_cap": 10.0,          # LIVE_PER_TRADE_CAP_ABS
+    "daily_loss_halt": 100.0,       # LIVE_DAILY_LOSS_HALT_FRAC * LIVE_BANKROLL = 0.10*1000
+    "per_trade_cap": 50.0,          # LIVE_PER_TRADE_CAP_ABS
     "min_edge": 0.08,               # LIVE_MIN_EDGE
-    "bankroll": 200.0,              # LIVE_BANKROLL
+    "bankroll": 1000.0,             # LIVE_BANKROLL
 }
 
 
