@@ -379,14 +379,13 @@ def test_selfcheck_exit_zero():
 def test_headless_smoke():
     """Reuse the DocuSmart pattern: edge --headless --dump-dom loads the page,
     12 cards + 8 canvases present. Skipped if edge isn't on PATH."""
-    import shutil, subprocess
+    import shutil, subprocess, sys
     if not shutil.which("edge"):
         print("skip test_headless_smoke (edge not found)")
         return
     d = tempfile.mkdtemp()
     a, b, live = _seed_risk_calib_station(d)
     env = dict(os.environ, PAPER_A_DB=a, PAPER_B_DB=b, LIVE_DB=live)
-    import threading
     server = subprocess.Popen([sys.executable, "-c",
         "import dash;dash.app.run(host='127.0.0.1',port=8766)"], env=env)
     try:
