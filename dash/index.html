@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex,nofollow">
+  <title>POLYBOT DASHBOARD</title>
+  <link rel="stylesheet" href="static/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">POLY<span class="accent">BOT</span> DASHBOARD</div>
+    <div class="pills">
+      <span class="pill pill-a" data-inst="A">A<span class="dot" id="dot-A"></span></span>
+      <span class="pill pill-b" data-inst="B">B<span class="dot" id="dot-B"></span></span>
+      <span class="pill pill-live" data-inst="LIVE">LIVE<span class="dot" id="dot-LIVE"></span></span>
+    </div>
+    <div class="stats">
+      <span id="stat-pnl" class="stat">PnL —</span>
+      <span id="stat-bankroll" class="stat">Bankroll —</span>
+      <span id="stat-gas" class="stat">Gas —</span>
+      <span id="stat-age" class="stat">Tick —</span>
+      <span id="stat-stale" class="badge-stale hidden">stale</span>
+      <span id="stat-reconnect" class="badge-recon hidden">reconnecting…</span>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="card span8 order-equity" id="card-equity"><h2>Equity Curve</h2><canvas id="chart-equity"></canvas></section>
+    <section class="card span4 order-edgepnl" id="card-edge-pnl"><h2>Per-Edge PnL</h2><canvas id="chart-edge-pnl"></canvas></section>
+    <section class="card span4 order-daily" id="card-daily-pnl"><h2>Daily PnL</h2><canvas id="chart-daily-pnl"></canvas></section>
+    <section class="card span4 order-risk" id="card-risk"><h2>Risk Gauges</h2><div class="gauges" id="risk-gauges"></div></section>
+    <section class="card span4 order-winrate" id="card-winrate"><h2>Win Rate</h2><canvas id="chart-winrate"></canvas></section>
+    <section class="card span7 order-feed" id="card-feed"><h2>Live Trade Feed</h2><div class="feed" id="feed-list"></div></section>
+    <section class="card span5 order-positions" id="card-positions"><h2>Open Positions</h2><div class="table-wrap" id="positions-table"></div></section>
+    <section class="card span4 order-rejections" id="card-rejections"><h2>Rejections (24h)</h2><canvas id="chart-rejections"></canvas></section>
+    <section class="card span4 order-candidates" id="card-candidates"><h2>Candidate Pipeline</h2><div class="table-wrap" id="candidates-table"></div></section>
+    <section class="card span4 order-edgedist" id="card-edge-dist"><h2>Edge Distribution</h2><canvas id="chart-edge-dist"></canvas></section>
+    <section class="card span6 order-stationbias" id="card-station-bias"><h2>Station Bias Drift</h2><canvas id="chart-station-bias"></canvas></section>
+    <section class="card span6 order-calib" id="card-calib"><h2>Calibration — Brier over time</h2><canvas id="chart-calib"></canvas></section>
+  </main>
+  <script src="static/app.js" defer></script>
+</body>
+</html>

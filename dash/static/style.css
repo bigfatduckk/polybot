@@ -1,0 +1,56 @@
+:root{
+  --bg:#0a0e14; --panel:#11161f; --panel2:#161d29; --border:#222b3a;
+  --text:#e6edf3; --muted:#7d8794; --dim:#525c6b; --accent:#8b5cf6;
+  --blue:#58a6ff; --violet:#bc8cff; --cyan:#39d0d8;
+  --green:#3fb950; --red:#f85149; --amber:#d29922;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  font:13px/1.45 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.topbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:16px;
+  padding:8px 16px;background:linear-gradient(90deg,var(--panel2),var(--panel));
+  border-bottom:1px solid var(--border)}
+.brand{font-weight:700;letter-spacing:.5px}
+.brand .accent{color:var(--accent)}
+.pills{display:flex;gap:6px}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:10px;
+  font-size:11px;border:1px solid var(--border)}
+.pill-a{color:var(--blue)} .pill-b{color:var(--violet)} .pill-live{color:var(--cyan)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--dim);display:inline-block}
+.dot.ok{background:var(--green);box-shadow:0 0 6px var(--green)}
+.dot.warn{background:var(--amber);box-shadow:0 0 6px var(--amber)}
+.dot.crit{background:var(--red);box-shadow:0 0 6px var(--red)}
+.stats{margin-left:auto;display:flex;gap:12px;font-size:11px;color:var(--muted)}
+.stat{font-family:"SFMono-Regular",Consolas,monospace}
+.badge-stale{color:var(--dim)} .badge-recon{color:var(--amber)}
+.hidden{display:none}
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px;padding:10px;max-width:1600px;margin:0 auto}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px;min-width:0}
+.card h2{margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
+.span8{grid-column:span 8} .span7{grid-column:span 7} .span6{grid-column:span 6}
+.span5{grid-column:span 5} .span4{grid-column:span 4}
+.feed{max-height:260px;overflow-y:auto;font:11px/1.5 "SFMono-Regular",Consolas,monospace}
+.feed .row{display:grid;grid-template-columns:150px 50px 1fr 90px;gap:6px;padding:2px 0;border-bottom:1px solid var(--border)}
+.feed .tag{font-weight:700} .tag-posted{color:var(--blue)} .tag-FILLED{color:var(--green)}
+ .tag-skip{color:var(--amber)} .tag-rej{color:var(--red)}
+.table-wrap{max-height:260px;overflow-y:auto}
+table{width:100%;border-collapse:collapse;font:11px "SFMono-Regular",Consolas,monospace}
+th,td{padding:3px 5px;text-align:left;border-bottom:1px solid var(--border)}
+th{color:var(--muted);font-weight:400;text-transform:uppercase;letter-spacing:.5px}
+.pos-pnl-pos{color:var(--green)} .pos-pnl-neg{color:var(--red)}
+.gauge{display:flex;align-items:center;gap:8px;margin:4px 0;font-size:11px}
+.gauge .bar{flex:1;height:6px;background:var(--panel2);border-radius:3px;overflow:hidden}
+.gauge .fill{height:100%;background:var(--accent)}
+.card.err{border-color:var(--red)}
+canvas{max-height:200px}
+@media(max-width:900px){
+  .grid{grid-template-columns:1fr}
+  .span8,.span7,.span6,.span5,.span4{grid-column:span 1}
+  .order-feed{order:1} .order-risk{order:2} .order-positions{order:3}
+  .order-equity{order:4} .order-daily{order:5} .order-edgepnl{order:6}
+  .order-winrate{order:7} .order-rejections{order:8} .order-candidates{order:9}
+  .order-edgedist{order:10} .order-stationbias{order:11} .order-calib{order:12}
+  .brand{font-size:12px} .stats{flex-wrap:wrap;gap:8px}
+  .feed{max-height:180px} canvas{max-height:110px}
+  .hide-mobile{display:none}
+}

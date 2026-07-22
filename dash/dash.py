@@ -55,7 +55,7 @@ def clamp_int(value, lo, hi, default):
 # Task 2 appends store_calib helpers here when reused; otherwise standalone.
 # Task 3+ appends Flask app + endpoint handlers below.
 import time
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 
 app = Flask(__name__)
 
@@ -120,6 +120,16 @@ def _last_tick_age(conn_fn, table="live_ticks"):
     except Exception:
         return None
 
+
+_STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
+@app.get("/")
+def index():
+    return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "index.html")
+
+@app.get("/static/<path:path>")
+def static_files(path):
+    return send_from_directory(_STATIC_DIR, path)
 
 @app.get("/api/health")
 def api_health():
