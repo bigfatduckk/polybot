@@ -94,7 +94,7 @@ def format_live_open(path=None):
     try:
         rows = _safe(conn,
             """SELECT id, city, market_date, signal_side, price, size, status
-               FROM live_orders WHERE status IN ('posted','open','partial')
+               FROM live_orders WHERE status IN ('posted','open','partial','filled')
                ORDER BY id DESC""")
         lines = ["[A-LIVE] === open live bets ==="]
         if not rows:

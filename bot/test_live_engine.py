@@ -344,6 +344,26 @@ def test_live_open_lists_only_open(tmp_path, monkeypatch):
     assert "Seoul" in out and "Tokyo" not in out   # rejected excluded
 
 
+def test_live_open_includes_filled(tmp_path, monkeypatch):
+    # A 'filled' but not-yet-settled order is an open position (capital
+    # committed, awaiting resolution). `opens live` must list it, matching
+    # the `live` health count which already counts 'filled' as open.
+    import live_positions as lp
+    _setup_dbs(tmp_path, monkeypatch)
+    live = str(tmp_path / "live.db")
+    lc = le.get_live_db()
+    lc.execute(
+        "INSERT INTO live_orders(ts, city, market_date, signal_side, price, size, "
+        "dry_run, status) VALUES(?,?,?,?,?,?,?,?)",
+        ("2026-07-20T12:30:00+00:00", "Taipei", "2026-07-20", "buy", 0.40, 12, 1, "filled"))
+    lc.commit()
+    lc.close()
+    out = lp.format_live_open(path=live)
+    health = lp.format_live_health(path=live)
+    assert "Taipei" in out                       # filled shows in opens live
+    assert "open=1" in health                   # and health counts it as open
+
+
 def test_live_ticks_lists_history(tmp_path, monkeypatch):
     import live_positions as lp
     _setup_dbs(tmp_path, monkeypatch)

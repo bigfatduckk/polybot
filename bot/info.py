@@ -17,6 +17,7 @@ Commands:
   unhalt yes        clear HALT_LIVE (resumes live arm; `unhalt` alone prompts)
   settled           bets settled today (HKT)
   settled YYYY-MM-DD bets settled on that date (HKT)
+  commands          show this list
 
 Latency: up to ~2 min between typing a command and the reply (next cron
 tick). Swap for an always-on systemd listener if instant response is needed.
@@ -43,6 +44,21 @@ from positions import (
 ENV_PATH = Path(__file__).resolve().parent / ".env"
 META_KEY = "telegram_last_update_id"
 API = "https://api.telegram.org/bot{token}/{method}"
+
+COMMANDS_HELP = """[A-LIVE] === commands ===
+  info              open positions + settled + totals
+  pnl               paper PnL per edge (totals only)
+  pnl live          live-arm PnL (open + last 10 settled + realized)
+  opens             all open bets grouped by edge
+  opens live        open LIVE bets only
+  live              one-glance live-arm health (HALT/DRY_RUN/counts/gas/last tick)
+  ticks [N]         last N live_ticks rows (default 10)
+  gas               last 3 live_balances reads (gas/usdc trend)
+  halt yes          set HALT_LIVE (pauses live arm; `halt` alone prompts)
+  unhalt yes        clear HALT_LIVE (resumes live arm; `unhalt` alone prompts)
+  settled           bets settled today (HKT)
+  settled YYYY-MM-DD bets settled on that date (HKT)
+  commands          show this list"""
 
 
 def _get_last_update_id(conn):
@@ -155,6 +171,8 @@ def main():
                 _send(token, owner_chat, f"[A-LIVE] control unavailable: {e}")
         elif cmd == "settled":
             _send(token, owner_chat, format_settled_day(conn, arg))
+        elif cmd == "commands":
+            _send(token, owner_chat, COMMANDS_HELP)
 
     if max_uid > last:
         _set_last_update_id(conn, max_uid)
