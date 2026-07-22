@@ -21,9 +21,16 @@ def now_iso():
 
 
 def ro_conn(path):
-    """Open a sqlite DB read-only. Any write raises sqlite3.OperationalError."""
+    """Open a sqlite DB read-only. Any write raises sqlite3.OperationalError.
+
+    immutable=1: the bot's crons are transient, so on close sqlite checkpoints
+    and removes the -shm/-wal files; a plain mode=ro open then fails with
+    "attempt to write a readonly database" (sqlite tries to recreate -shm, which
+    ro forbids). immutable=1 reads the checkpointed main .db with no -shm needed
+    -> accurate between bot runs (the common case), at most seconds-stale during a
+    brief cron run. Reads never block or touch the bot's writes."""
     from pathlib import Path
-    uri = Path(path).resolve().as_uri() + "?mode=ro"
+    uri = Path(path).resolve().as_uri() + "?mode=ro&immutable=1"
     conn = sqlite3.connect(uri, uri=True)
     conn.row_factory = sqlite3.Row
     return conn
