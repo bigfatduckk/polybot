@@ -5,7 +5,7 @@ The dash user has read perm on the .db files and cannot read /root/polybot/.env.
 """
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 # Absolute paths to the three bot DBs. Override via env at deploy time.
 _BOT_DIR_DEFAULT = "/root/polybot/bot"
@@ -142,3 +142,107 @@ def api_health():
         "last_tick_age": _last_tick_age(conn_live), "halted": halted,
     }
     return jsonify(out)
+
+
+def _pnl_rows(conn_fn, table):
+    """All realized pnl rows (ts, pnl, resolved_yes) from one table, read-only."""
+    rows, err = _query(conn_fn, f"SELECT ts, pnl, resolved_yes FROM {table} WHERE pnl IS NOT NULL")
+    return [(r["ts"], r["pnl"], r["resolved_yes"]) for r in rows], err
+
+
+def _hkt_day(ts):
+    from datetime import datetime
+    try:
+        then = datetime.fromisoformat(ts)
+        if then.tzinfo is None:
+            then = then.replace(tzinfo=timezone.utc)
+        return (then.astimezone(timezone(timedelta(hours=8)))).date().isoformat()
+    except Exception:
+        return None
+
+
+@app.get("/api/equity")
+def api_equity():
+    days = clamp_int(request.args.get("days"), 1, 365, 30)
+    series = {}
+    for name, fn, tables in [
+        ("A", conn_a, [("settlements", None), ("pm_settlements", None)]),
+        ("B", conn_b, [("settlements", None)]),
+        ("LIVE", conn_live, [("live_settlements", None)]),
+    ]:
+        by_day = {}
+        for tbl, _ in tables:
+            rows, _ = _pnl_rows(fn, tbl)
+            for ts, pnl, _rv in rows:
+                day = _hkt_day(ts)
+                if day is None:
+                    continue
+                by_day[day] = by_day.get(day, 0.0) + (pnl or 0.0)
+        ordered = sorted(by_day.items())
+        cum = 0.0
+        pts = []
+        for day, pnl in ordered:
+            cum += pnl
+            pts.append({"day": day, "pnl": round(pnl, 4), "cum": round(cum, 4)})
+        series[name] = pts
+    return jsonify({"ts": now_iso(), "series": series})
+
+
+@app.get("/api/daily-pnl")
+def api_daily_pnl():
+    series = api_equity().get_json()["series"]
+    out = {name: [{"day": p["day"], "pnl": p["pnl"]} for p in pts] for name, pts in series.items()}
+    return jsonify({"ts": now_iso(), "series": out})
+
+
+@app.get("/api/drawdown")
+def api_drawdown():
+    series = api_equity().get_json()["series"]
+    dd = {}
+    for name, pts in series.items():
+        cummax = 0.0
+        rows = []
+        for p in pts:
+            cummax = max(cummax, p["cum"])
+            rows.append({"day": p["day"], "dd": round(p["cum"] - cummax, 4)})
+        dd[name] = rows
+    return jsonify({"ts": now_iso(), "series": dd})
+
+
+@app.get("/api/edge-pnl")
+def api_edge_pnl():
+    edges = []
+    wrows, _ = _query(conn_a, "SELECT COALESCE(SUM(pnl),0) AS s, COUNT(*) AS n FROM settlements WHERE pnl IS NOT NULL")
+    if wrows:
+        edges.append({"edge": "weather", "instance": "A", "pnl": round(wrows[0]["s"], 4), "n": wrows[0]["n"]})
+    brows, _ = _query(conn_b, "SELECT COALESCE(SUM(pnl),0) AS s, COUNT(*) AS n FROM settlements WHERE pnl IS NOT NULL")
+    if brows:
+        edges.append({"edge": "weather", "instance": "B", "pnl": round(brows[0]["s"], 4), "n": brows[0]["n"]})
+    erows, _ = _query(conn_a, "SELECT edge, COALESCE(SUM(pnl),0) AS s, COUNT(*) AS n FROM pm_settlements WHERE pnl IS NOT NULL GROUP BY edge")
+    for r in erows:
+        edges.append({"edge": r["edge"], "instance": "A", "pnl": round(r["s"], 4), "n": r["n"]})
+    lrows, _ = _query(conn_live, "SELECT COALESCE(SUM(pnl),0) AS s, COUNT(*) AS n FROM live_settlements WHERE pnl IS NOT NULL")
+    if lrows:
+        edges.append({"edge": "live", "instance": "LIVE", "pnl": round(lrows[0]["s"], 4), "n": lrows[0]["n"]})
+    return jsonify({"ts": now_iso(), "edges": edges})
+
+
+@app.get("/api/winrate")
+def api_winrate():
+    edges = []
+    def _wr(label, fn, sql):
+        rows, _ = _query(fn, sql)
+        if rows:
+            r = rows[0]
+            total = r["n"]
+            won = r["won"]
+            edges.append({"edge": label, "won": won, "total": total,
+                          "rate": round(won / total, 4) if total else None})
+    _wr("weather", conn_a, "SELECT COUNT(*) AS n, SUM(resolved_yes) AS won FROM settlements WHERE pnl IS NOT NULL")
+    _wr("weatherB", conn_b, "SELECT COUNT(*) AS n, SUM(resolved_yes) AS won FROM settlements WHERE pnl IS NOT NULL")
+    erows, _ = _query(conn_a, "SELECT edge, COUNT(*) AS n, SUM(resolved_yes) AS won FROM pm_settlements WHERE pnl IS NOT NULL GROUP BY edge")
+    for r in erows:
+        edges.append({"edge": r["edge"], "won": r["won"], "total": r["n"],
+                      "rate": round(r["won"] / r["n"], 4) if r["n"] else None})
+    _wr("live", conn_live, "SELECT COUNT(*) AS n, SUM(resolved_yes) AS won FROM live_settlements WHERE pnl IS NOT NULL")
+    return jsonify({"ts": now_iso(), "edges": edges})

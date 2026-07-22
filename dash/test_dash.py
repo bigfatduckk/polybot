@@ -92,6 +92,63 @@ def test_api_health():
         assert j["instances"][inst]["last_tick_age"] is not None, f"{inst} last_tick_age was None"
 
 
+def _seed_pnl_dbs(d):
+    import sqlite3 as sq
+    a = sq.connect(os.path.join(d, "a.db"))
+    for s in [
+        "CREATE TABLE settlements (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, market_id TEXT, condition_id TEXT, city TEXT, date TEXT, observed_high REAL, bucket_key TEXT, resolved_yes INTEGER, pnl REAL, snapshot_json TEXT)",
+        "CREATE TABLE pm_settlements (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, edge TEXT, market_id TEXT, condition_id TEXT, resolved_yes INTEGER, pnl REAL, meta_json TEXT)",
+    ]:
+        a.execute(s)
+    # weather: day1 +2.0, day1 +3.0 (HKT). ts UTC -> HKT day.
+    a.execute("INSERT INTO settlements(ts,pnl,resolved_yes) VALUES('2026-07-21T16:00:00+00:00',2.0,1)")  # HKT 07-22 00:00
+    a.execute("INSERT INTO settlements(ts,pnl,resolved_yes) VALUES('2026-07-22T10:00:00+00:00',3.0,1)")  # HKT 07-22 18:00
+    a.execute("INSERT INTO pm_settlements(ts,edge,pnl,resolved_yes) VALUES('2026-07-22T10:00:00+00:00','flb',-1.0,0)")
+    a.commit(); a.close()
+    b = sq.connect(os.path.join(d, "b.db"))
+    b.execute("CREATE TABLE settlements (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, market_id TEXT, condition_id TEXT, city TEXT, date TEXT, observed_high REAL, bucket_key TEXT, resolved_yes INTEGER, pnl REAL, snapshot_json TEXT)")
+    b.execute("INSERT INTO settlements(ts,pnl,resolved_yes) VALUES('2026-07-22T10:00:00+00:00',5.0,1)")
+    b.commit(); b.close()
+    l = sq.connect(os.path.join(d, "live.db"))
+    l.execute("CREATE TABLE live_settlements (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, market_id TEXT, condition_id TEXT, city TEXT, date TEXT, bucket_key TEXT, resolved_yes INTEGER, pnl REAL, raw_json TEXT)")
+    l.execute("INSERT INTO live_settlements(ts,pnl,resolved_yes) VALUES('2026-07-22T10:00:00+00:00',-2.0,0)")
+    l.commit(); l.close()
+    return os.path.join(d, "a.db"), os.path.join(d, "b.db"), os.path.join(d, "live.db")
+
+
+def test_api_equity_and_daily():
+    d = tempfile.mkdtemp()
+    a, b, live = _seed_pnl_dbs(d)
+    dash.PAPER_A_DB, dash.PAPER_B_DB, dash.LIVE_DB = a, b, live
+    c = dash.app.test_client()
+    # A realized = weather 2+3 + flb -1 = 4.0
+    je = c.get("/api/equity?days=30").get_json()
+    assert "A" in je["series"]
+    assert je["series"]["A"][-1]["cum"] == 4.0  # hand-computed
+    assert je["series"]["B"][-1]["cum"] == 5.0
+    assert je["series"]["LIVE"][-1]["cum"] == -2.0
+    jd = c.get("/api/daily-pnl?days=30").get_json()
+    # A has two HKT days; sum of daily == 4.0
+    a_days = {x["day"]: x["pnl"] for x in jd["series"]["A"]}
+    assert abs(sum(a_days.values()) - 4.0) < 1e-9
+
+
+def test_api_edge_pnl_and_winrate():
+    d = tempfile.mkdtemp()
+    a, b, live = _seed_pnl_dbs(d)
+    dash.PAPER_A_DB, dash.PAPER_B_DB, dash.LIVE_DB = a, b, live
+    c = dash.app.test_client()
+    ep = c.get("/api/edge-pnl").get_json()
+    by = {e["edge"]: e["pnl"] for e in ep["edges"]}
+    assert by["weather"] == 5.0      # A weather 2+3
+    assert by["flb"] == -1.0
+    assert by["live"] == -2.0
+    wr = c.get("/api/winrate").get_json()
+    wby = {e["edge"]: e for e in wr["edges"]}
+    assert wby["flb"]["won"] == 0 and wby["flb"]["total"] == 1
+    assert wby["weather"]["won"] == 2 and wby["weather"]["total"] == 2
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(vars(dash).items()) if k.startswith("test_")]
     fns += [v for k, v in sorted(globals().items()) if k.startswith("test_")]
