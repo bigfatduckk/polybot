@@ -383,3 +383,80 @@ def api_funnel():
         stages.append({"edge": e, "candidates": (c[0]["n"] if c else 0),
                        "orders": (o[0]["n"] if o else 0), "fills": (f[0]["n"] if f else 0)})
     return jsonify({"ts": now_iso(), "stages": stages})
+
+
+# Risk constants mirrored from bot/config.py (LIVE_* values, verified 2026-07-22).
+# Mirrored as literals so the dashboard does not import the bot tree (no env reads).
+RISK = {
+    "max_open": 5,                  # LIVE_MAX_OPEN_POSITIONS
+    "max_consec": 6,                # LIVE_CONSECUTIVE_LOSS_HALT
+    "daily_loss_halt": 20.0,        # LIVE_DAILY_LOSS_HALT_FRAC * LIVE_BANKROLL = 0.10*200
+    "per_trade_cap": 10.0,          # LIVE_PER_TRADE_CAP_ABS
+    "min_edge": 0.08,               # LIVE_MIN_EDGE
+    "bankroll": 200.0,              # LIVE_BANKROLL
+}
+
+
+@app.get("/api/risk")
+def api_risk():
+    open_rows, _ = _query(conn_live,
+        "SELECT COUNT(*) AS n FROM live_orders WHERE status IN ('posted','open','partial','filled')")
+    open_n = open_rows[0]["n"] if open_rows else 0
+    cut = _cutoff_ts(24)
+    sett, _ = _query(conn_live,
+        "SELECT pnl, resolved_yes FROM live_settlements WHERE ts >= ? ORDER BY id DESC", (cut,))
+    consec = 0
+    for r in (sett or []):
+        if (r["pnl"] or 0) < 0:
+            consec += 1
+        else:
+            break
+    daily_rows, _ = _query(conn_live, "SELECT COALESCE(SUM(pnl),0) AS s FROM live_settlements WHERE ts >= ?", (cut,))
+    daily_loss = float(daily_rows[0]["s"]) if daily_rows else 0.0
+    halted, _ = _latest_halt_halted(conn_live)
+    return jsonify({"ts": now_iso(), "open_positions": open_n, "max_open": RISK["max_open"],
+                     "consec_loss": consec, "max_consec": RISK["max_consec"],
+                     "daily_loss": round(daily_loss, 2), "daily_loss_halt": RISK["daily_loss_halt"],
+                     "per_trade_cap": RISK["per_trade_cap"], "halted": halted})
+
+
+@app.get("/api/calib")
+def api_calib():
+    # ponytail: ORDER BY ts DESC (not id DESC) — id ordering only tracks time when
+    # rows are appended chronologically; ts is the robust "latest" semantics.
+    latest_rows, _ = _query(conn_a,
+        "SELECT edge, brier_model, brier_market, reliability_maxdev_pp, n_signals, gate_pass, ts "
+        "FROM calib_snapshots ORDER BY ts DESC LIMIT 5")
+    latest = None
+    if latest_rows:
+        r = latest_rows[0]
+        latest = {"edge": r["edge"], "brier_model": r["brier_model"], "brier_market": r["brier_market"],
+                  "reliability_maxdev_pp": r["reliability_maxdev_pp"], "n_signals": r["n_signals"],
+                  "gate_pass": bool(r["gate_pass"]), "ts": r["ts"]}
+    series_rows, _ = _query(conn_a,
+        "SELECT ts, edge, brier_model, brier_market FROM calib_snapshots ORDER BY ts ASC LIMIT 500")
+    series = [{"ts": r["ts"], "edge": r["edge"], "brier_model": r["brier_model"],
+               "brier_market": r["brier_market"]} for r in series_rows or []]
+    return jsonify({"ts": now_iso(), "latest": latest, "series": series})
+
+
+@app.get("/api/station-bias")
+def api_station_bias():
+    days = clamp_int(request.args.get("days"), 1, 365, 30)
+    cut = _cutoff_ts(days * 24)
+    rows, _ = _query(conn_a,
+        "SELECT ts, city, residual FROM station_obs WHERE ts >= ? ORDER BY ts ASC", (cut,))
+    by = {}
+    for r in rows or []:
+        by.setdefault(r["city"], []).append({"ts": r["ts"], "residual": r["residual"]})
+    return jsonify({"ts": now_iso(), "cities": [{"city": c, "points": pts} for c, pts in by.items()]})
+
+
+@app.get("/api/state")
+def api_state():
+    health = api_health().get_json()
+    feed = api_feed().get_json()
+    positions = api_positions().get_json()
+    risk = api_risk().get_json()
+    return jsonify({"ts": now_iso(), "health": health, "feed": feed,
+                    "positions": positions, "risk": risk})

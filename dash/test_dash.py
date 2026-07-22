@@ -237,6 +237,74 @@ def test_api_rejections_edgedist_funnel():
     assert sby["weather"]["candidates"] == 2 and sby["weather"]["orders"] == 1
 
 
+def _seed_risk_calib_station(d):
+    import sqlite3 as sq
+    l = sq.connect(os.path.join(d, "live.db"))
+    for s in [
+        "CREATE TABLE live_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, candidate_id INTEGER, market_id TEXT, condition_id TEXT, exec_token_id TEXT, city TEXT, market_date TEXT, bucket_key TEXT, signal_side TEXT, exec_side TEXT, price REAL, size REAL, notional REAL, edge_at_exec REAL, kelly_fraction REAL, neg_risk INTEGER, dry_run INTEGER, clob_order_id TEXT, status TEXT, raw_json TEXT)",
+        "CREATE TABLE live_settlements (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, market_id TEXT, condition_id TEXT, city TEXT, date TEXT, bucket_key TEXT, resolved_yes INTEGER, pnl REAL, raw_json TEXT)",
+        "CREATE TABLE live_halts (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, reason TEXT)",
+        "CREATE TABLE live_ticks (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, job TEXT, note TEXT, detail_json TEXT)",
+        "CREATE TABLE live_balances (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, usdc REAL, matic REAL, source TEXT)",
+        "CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT)",
+    ]:
+        l.execute(s)
+    l.execute("INSERT INTO live_orders(ts,status,dry_run) VALUES('2026-07-22T10:00:00+00:00','posted',1)")
+    l.execute("INSERT INTO live_settlements(ts,pnl,resolved_yes) VALUES('2026-07-22T09:00:00+00:00',-1.0,0)")
+    l.execute("INSERT INTO live_settlements(ts,pnl,resolved_yes) VALUES('2026-07-22T09:30:00+00:00',-2.0,0)")
+    l.execute("INSERT INTO live_halts(ts,reason) VALUES('2026-07-22T10:00:00+00:00','telegram:set')")
+    l.execute("INSERT INTO live_ticks(ts,job,note,detail_json) VALUES('2026-07-22T10:00:00+00:00','maintain','ok','{}')")
+    l.execute("INSERT INTO live_balances(ts,usdc,matic,source) VALUES('2026-07-22T10:00:00+00:00',200.0,135.6,'rpc')")
+    l.commit(); l.close()
+    a = sq.connect(os.path.join(d, "a.db"))
+    for s in [
+        "CREATE TABLE calib_snapshots (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, edge TEXT, brier_model REAL, brier_market REAL, reliability_maxdev_pp REAL, n_signals INTEGER, gate_pass INTEGER, detail_json TEXT)",
+        "CREATE TABLE station_obs (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, city TEXT, date TEXT, observed_high REAL, blend_mean REAL, residual REAL, source TEXT, snapshot_json TEXT)",
+        "CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT)",
+        "CREATE TABLE scans (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, job TEXT, mode TEXT, note TEXT, snapshot_json TEXT)",
+    ]:
+        a.execute(s)
+    a.execute("INSERT INTO calib_snapshots(ts,edge,brier_model,brier_market,reliability_maxdev_pp,n_signals,gate_pass,detail_json) VALUES('2026-07-22T06:30:00+00:00','weather',0.17,0.24,25.0,658,0,'{}')")
+    a.execute("INSERT INTO calib_snapshots(ts,edge,brier_model,brier_market,reliability_maxdev_pp,n_signals,gate_pass,detail_json) VALUES('2026-07-21T06:30:00+00:00','weather',0.18,0.25,26.0,650,0,'{}')")
+    a.execute("INSERT INTO station_obs(ts,city,residual) VALUES('2026-07-22T10:00:00+00:00','HongKong',0.3)")
+    a.execute("INSERT INTO station_obs(ts,city,residual) VALUES('2026-07-22T10:00:00+00:00','Macau',-0.2)")
+    a.execute("INSERT INTO meta VALUES ('bankroll','1000')")
+    a.commit(); a.close()
+    return os.path.join(d, "a.db"), os.path.join(d, "a.db"), os.path.join(d, "live.db")
+
+
+def test_api_risk_calib_stationbias():
+    d = tempfile.mkdtemp()
+    a, b, live = _seed_risk_calib_station(d)
+    dash.PAPER_A_DB, dash.PAPER_B_DB, dash.LIVE_DB = a, b, live
+    c = dash.app.test_client()
+    r = c.get("/api/risk").get_json()
+    assert r["open_positions"] == 1
+    assert r["max_open"] == 5
+    assert r["consec_loss"] == 2          # last 2 settlements both losses
+    assert r["max_consec"] == 6
+    assert r["daily_loss_halt"] == 20.0   # 0.10 * 200
+    assert r["halted"] is True
+    cal = c.get("/api/calib").get_json()
+    assert cal["latest"]["edge"] == "weather"
+    assert cal["latest"]["brier_model"] == 0.17
+    assert len(cal["series"]) == 2
+    sb = c.get("/api/station-bias?days=30").get_json()
+    cities = {x["city"] for x in sb["cities"]}
+    assert "HongKong" in cities and "Macau" in cities
+
+
+def test_api_state_aggregate():
+    d = tempfile.mkdtemp()
+    a, b, live = _seed_risk_calib_station(d)
+    dash.PAPER_A_DB, dash.PAPER_B_DB, dash.LIVE_DB = a, b, live
+    c = dash.app.test_client()
+    s = c.get("/api/state").get_json()
+    for k in ("health", "feed", "positions", "risk"):
+        assert k in s
+    assert s["risk"]["halted"] is True
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(vars(dash).items()) if k.startswith("test_")]
     fns += [v for k, v in sorted(globals().items()) if k.startswith("test_")]
