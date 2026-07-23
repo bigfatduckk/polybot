@@ -220,6 +220,72 @@ def test_sizing_rejects_degenerate_price():
     assert le.size_signal(_sig(p=0.5), walked_exec_price=1.0)[0] is None
 
 
+def test_size_signal_uses_passed_bankroll():
+    # Cash-coupled sizing: with $73 free pUSD, quarter-Kelly stakes off 73, not
+    # LIVE_BANKROLL. f=(0.6-0.5)/(1-0.5)=0.2; /4=0.05; notional=min(0.05*73, 50)=3.65
+    notional, shares, edge = le.size_signal(_sig(side="buy", p=0.60),
+                                             walked_exec_price=0.50, bankroll=73.0)
+    assert abs(notional - 3.65) < 1e-9
+    assert abs(shares - 3.65 / 0.50) < 1e-9
+    assert abs(edge - 0.10) < 1e-9
+
+
+def test_load_live_state_caps_bankroll_at_cash(tmp_path, monkeypatch):
+    # The fix: load_live_state floors bankroll at actual free pUSD, so a $1000
+    # config can't drive $50 bets against $73 of real collateral.
+    _setup_dbs(tmp_path, monkeypatch)
+    lc = le.get_live_db()
+    lc.execute("INSERT INTO live_balances(ts, usdc, matic, source) VALUES(?,?,?,?)",
+              ("2026-07-23T06:08:00+00:00", 73.38, 135.6, "rpc"))
+    lc.commit(); lc.close()
+    state = le.load_live_state(le.get_live_db())
+    assert state.bankroll == 73.38
+    assert state.realized_pnl_today == 0.0
+    assert state.open_positions == []
+
+
+def test_load_live_state_falls_back_when_no_balance(tmp_path, monkeypatch):
+    # Cold start (maintain-live hasn't written a balance yet): fall back to the
+    # config rather than blocking — but never silently exceed real cash.
+    _setup_dbs(tmp_path, monkeypatch)
+    state = le.load_live_state(le.get_live_db())
+    assert state.bankroll == le.LIVE_BANKROLL
+
+
+def test_settle_marks_order_settled(tmp_path, monkeypatch):
+    # settle_resolved must flip the order status to 'settled' so it exits
+    # open_positions (status IN posted/open/filled/partial) and reconcile stops
+    # re-poling it. Otherwise settled orders linger as 'filled' and pollute caps.
+    import live_settle as ls
+    import markets
+    monkeypatch.setattr(markets, "fetch_resolution",
+                       lambda mid: (True, "yes", ["1.0", "0.0"]))
+    monkeypatch.setattr(engine, "notify", lambda *a, **k: None)
+    _setup_dbs(tmp_path, monkeypatch)
+    lc = le.get_live_db()
+    lo = ["ts", "market_id", "condition_id", "city", "market_date",
+          "bucket_key", "signal_side", "status"]
+    lc.execute(f"INSERT INTO live_orders({','.join(lo)}) VALUES({','.join(['?']*len(lo))})",
+              (le._now_iso(), "m1", "c1", "Seoul", "2026-07-20", "30C", "buy", "filled"))
+    lf = ["ts", "order_id", "market_id", "side", "price", "size"]
+    lc.execute(f"INSERT INTO live_fills({','.join(lf)}) VALUES({','.join(['?']*len(lf))})",
+              (le._now_iso(), 1, "m1", "buy", 0.50, 10))
+    lc.commit(); lc.close()
+    lc = le.get_live_db()
+    n = ls.settle_resolved(lc)
+    lc.commit(); lc.close()
+    lc = le.get_live_db()
+    st = lc.execute("SELECT status FROM live_orders WHERE market_id='m1'").fetchone()
+    sets = lc.execute(
+        "SELECT COUNT(*) FROM live_settlements WHERE market_id='m1'").fetchone()[0]
+    opens = lc.execute(
+        "SELECT COUNT(*) FROM live_orders WHERE status IN ('posted','open','filled','partial')").fetchone()[0]
+    lc.close()
+    assert n == 1 and sets == 1
+    assert st["status"] == "settled"
+    assert opens == 0   # settled order no longer counts as open
+
+
 def _spec(side="buy", p=0.60, exec_price=0.50, market_id="m1", city="Seoul",
           mdate="2026-07-20"):
     sig = _sig(side=side, p=p, city=city, mdate=mdate, market_id=market_id)

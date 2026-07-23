@@ -8,6 +8,51 @@ def _run(members, date="2026-07-13", model="ecmwf_ifs025", city="Seoul"):
     )
 
 
+def test_load_residuals_chronological_order(tmp_path, monkeypatch):
+    # _load_residuals must return the last 30 in ASCENDING id order so
+    # station_bias's [-N:] takes the newest N. DESC here was the bug: [-N:]
+    # took the oldest N of the window, lagging the bias across regime changes.
+    import engine, config
+    db = tmp_path / "e.db"
+    monkeypatch.setattr(engine, "DB_PATH", str(db))
+    monkeypatch.setattr(config, "DB_PATH", str(db))
+    engine.init_db()
+    conn = engine.get_db()
+    for i in range(1, 31):
+        conn.execute(
+            "INSERT INTO station_obs(ts, city, date, observed_high, blend_mean, "
+            "residual, source, snapshot_json) VALUES(?,?,?,?,?,?,?,?)",
+            (engine.now_iso(), "Hong Kong", f"2026-01-{i:02d}", 30.0, 30.0,
+             float(i), "test", "{}"))
+    conn.commit(); conn.close()
+    conn = engine.get_db()
+    res = engine._load_residuals(conn, "Hong Kong")
+    conn.close()
+    assert res == [float(i) for i in range(1, 31)], res
+
+
+def test_station_bias_uses_newest_20(tmp_path, monkeypatch):
+    # 30 residuals: oldest 20 = -1.0, newest 10 = +5.0. Newest-20 mean (the
+    # intent) = (10*-1 + 10*5)/20 = +2.0; the DESC bug used the oldest-20 = -1.0.
+    import engine, config
+    db = tmp_path / "e.db"
+    monkeypatch.setattr(engine, "DB_PATH", str(db))
+    monkeypatch.setattr(config, "DB_PATH", str(db))
+    engine.init_db()
+    conn = engine.get_db()
+    for i in range(1, 31):
+        val = -1.0 if i <= 20 else 5.0
+        conn.execute(
+            "INSERT INTO station_obs(ts, city, date, observed_high, blend_mean, "
+            "residual, source, snapshot_json) VALUES(?,?,?,?,?,?,?,?)",
+            (engine.now_iso(), "Hong Kong", f"2026-01-{i:02d}", 30.0, 30.0, val, "t", "{}"))
+    conn.commit(); conn.close()
+    conn = engine.get_db()
+    res = engine._load_residuals(conn, "Hong Kong")
+    conn.close()
+    assert abs(w.station_bias(res) - 2.0) < 1e-9
+
+
 def test_parse_bucket_exact_closed_low_open_high():
     b = w.parse_bucket("Will the highest temperature in Seoul be 30°C on July 13?")
     assert b.lo == 30.0 and b.lo_incl is True

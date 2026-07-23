@@ -101,8 +101,11 @@ def _exec_token_and_book(signal, client):
     return token, book
 
 
-def prepare_order(signal, client, live_conn):
+def prepare_order(signal, client, live_conn, bankroll=None):
     """Fresh book → walk → size → recheck edge at walked price.
+    bankroll: effective capital (load_live_state().bankroll, cash-capped);
+    forwarded to size_signal so sizing tracks actual free pUSD, not the
+    static LIVE_BANKROLL config. None → size_signal defaults to LIVE_BANKROLL.
     Returns a LiveOrderSpec ready to submit, or None (skip logged to live_ticks)."""
     token, book = _exec_token_and_book(signal, client)
     if not token or not book:
@@ -123,7 +126,7 @@ def prepare_order(signal, client, live_conn):
         le.log_tick(live_conn, "weather-live", "skip:no_depth",
                      {"candidate_id": signal.candidate_id})
         return None
-    notional, shares, edge = le.size_signal(signal, walked_exec_price=avg)
+    notional, shares, edge = le.size_signal(signal, walked_exec_price=avg, bankroll=bankroll)
     if notional is None:
         le.log_tick(live_conn, "weather-live", "skip:no_stake",
                      {"candidate_id": signal.candidate_id, "avg": avg})
@@ -151,10 +154,11 @@ def prepare_order(signal, client, live_conn):
     limit = round(deepest / tick_val) * tick_val if tick_val > 0 else deepest
     notional = limit * size
     neg_risk = bool(neg) or signal.neg_risk or _get_neg_risk(client, token)
+    eff = bankroll if bankroll else le.LIVE_BANKROLL
     return le.LiveOrderSpec(
         signal=signal, exec_token_id=token, exec_side="BUY",
         price=limit, size=size, notional=notional,
-        edge_at_exec=edge, kelly_fraction=(notional / le.LIVE_BANKROLL) * 4.0,
+        edge_at_exec=edge, kelly_fraction=(notional / eff) * 4.0,
     ), {"tick_size": str(tick_val), "neg_risk": neg_risk}
 
 

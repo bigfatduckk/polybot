@@ -242,15 +242,21 @@ class LiveOrderSpec:
     kelly_fraction: float
 
 
-def size_signal(signal, walked_exec_price):
+def size_signal(signal, walked_exec_price, bankroll=None):
     """Quarter-Kelly sizing identical to engine.propose, mapped to the
     execution token. For a sell, the execution is BUY NO at p_no; Kelly is
     computed in YES-space (q = 1 - p_no) for mechanical fidelity to paper,
     then the notional is spent buying NO shares.
 
+    bankroll: effective capital to stake against. Caller passes
+    load_live_state().bankroll (capped at actual free pUSD) so sizing can't
+    deploy capital that isn't in the wallet. Defaults to LIVE_BANKROLL.
+
     Returns (notional, shares, edge_at_exec) or (None, None, None) if the
     Kelly stake is <= 0 or below CLOB minimums (never sized up to a minimum).
     """
+    if bankroll is None:
+        bankroll = LIVE_BANKROLL
     p = signal.p_model
     if signal.side == "buy":
         q = walked_exec_price          # yes-ask
@@ -266,8 +272,8 @@ def size_signal(signal, walked_exec_price):
         f = (q - p) / q
         edge_at_exec = (1.0 - p) - p_no - _fee(signal, p)
     f = max(0.0, f) / 4.0
-    notional = min(f * LIVE_BANKROLL,
-                   LIVE_PER_TRADE_CAP_FRAC * LIVE_BANKROLL,
+    notional = min(f * bankroll,
+                   LIVE_PER_TRADE_CAP_FRAC * bankroll,
                    LIVE_PER_TRADE_CAP_ABS)
     if notional <= 0.0:
         return None, None, None
@@ -289,6 +295,17 @@ class LiveState:
     open_positions: list = field(default_factory=list)  # dicts: market_id, city, market_date
 
 
+def _available_cash(conn):
+    """Latest known free pUSD in the deposit wallet (proxy balanceOf, refreshed
+    by maintain-live every 15min). None if never populated. Kelly sizes off
+    min(LIVE_BANKROLL, available) so a $1000 config can't deploy capital that
+    isn't actually in the wallet."""
+    row = conn.execute(
+        "SELECT usdc FROM live_balances WHERE usdc IS NOT NULL ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    return float(row["usdc"]) if row else None
+
+
 def load_live_state(conn):
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     pnl_today = float(conn.execute(
@@ -308,7 +325,9 @@ def load_live_state(conn):
         """SELECT market_id, city, market_date FROM live_orders
            WHERE status IN ('posted','open','filled','partial')"""
     ).fetchall()]
-    return LiveState(bankroll=LIVE_BANKROLL, realized_pnl_today=pnl_today,
+    avail = _available_cash(conn)
+    bankroll = min(LIVE_BANKROLL, avail) if avail is not None else LIVE_BANKROLL
+    return LiveState(bankroll=bankroll, realized_pnl_today=pnl_today,
                      consecutive_losses=losses, open_positions=open_pos)
 
 

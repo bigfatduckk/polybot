@@ -201,6 +201,16 @@ def settle_resolved(conn):
              r["mdate"] or "", r["bucket"] or "", int(yes_won), pnl,
              json.dumps({"outcome": outcome, "prices": prices, "fills": len(fills)})),
         )
+        # Mark the settled market's orders 'settled' so load_live_state's
+        # open_positions (status IN posted/open/filled/partial) and
+        # reconcile_fills stop carrying them — otherwise settled orders stay
+        # 'filled' forever, polluting region-day/one-per-market caps and being
+        # re-polled every maintain tick.
+        conn.execute(
+            "UPDATE live_orders SET status='settled' WHERE market_id=? "
+            "AND status IN ('posted','open','filled','partial')",
+            (market_id,),
+        )
         settled += 1
         import engine
         verdict = "YES won" if yes_won else "NO won"

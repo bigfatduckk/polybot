@@ -383,11 +383,15 @@ def _store_snapshot(s):
 
 
 def _load_residuals(conn, city):
+    # Fetch the 30 newest (DESC) then reverse to chronological (ascending) so
+    # callers using residuals[-N:] take the newest N. Returning DESC directly
+    # made [-N:] the oldest N of the window — excluding the most recent
+    # observations and lagging station_bias across regime changes.
     rows = conn.execute(
         "SELECT residual FROM station_obs WHERE city=? ORDER BY id DESC LIMIT 30",
         (city,),
     ).fetchall()
-    return [r["residual"] for r in rows if r["residual"] is not None]
+    return [r["residual"] for r in reversed(rows) if r["residual"] is not None]
 
 
 def _walk_book(levels, target_shares):

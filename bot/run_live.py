@@ -59,7 +59,7 @@ def job_weather_live():
             state = le.load_live_state(live_conn)
             posted = dry_signed = rejected = skipped = 0
             for sig in sigs:
-                prepared = live_executor.prepare_order(sig, client, live_conn)
+                prepared = live_executor.prepare_order(sig, client, live_conn, state.bankroll)
                 if prepared is None:
                     skipped += 1
                     continue
@@ -76,6 +76,7 @@ def job_weather_live():
                     state.open_positions.append(
                         {"market_id": sig.market_id, "city": sig.city,
                          "market_date": sig.market_date})
+                    state.bankroll = max(0.0, state.bankroll - spec.notional)
                     engine.notify(
                         f"[A-LIVE] posted {sig.side} {sig.city} {sig.market_date} "
                         f"@{spec.price:.3f} x{spec.size:.0f} edge {spec.edge_at_exec:+.3f}")
@@ -89,10 +90,11 @@ def job_weather_live():
                     engine.notify(f"[A-LIVE] order rejected {sig.city} {sig.market_date}")
             tag = "DRY-RUN" if dry else "LIVE"
             gated = evaluated - len(sigs)
-            engine.notify(
-                f"[A-LIVE] weather-live tick ({tag}): evaluated={evaluated} "
-                f"gated={gated} signals={len(sigs)} posted={posted} "
-                f"dry_signed={dry_signed} rejected={rejected} skipped={skipped}")
+            summary = (f"[A-LIVE] weather-live tick ({tag}): evaluated={evaluated} "
+                       f"gated={gated} signals={len(sigs)} posted={posted} "
+                       f"dry_signed={dry_signed} rejected={rejected} skipped={skipped}")
+            engine.notify(summary)
+            print(f"[{le._now_iso()}] {summary}", flush=True)
             live_conn.commit()
         finally:
             paper_conn.close()
@@ -105,6 +107,8 @@ def main():
     ap.add_argument("--job", required=True, choices=["weather-live", "maintain-live"])
     args = ap.parse_args()
     load_dotenv(ENV_PATH)
+    print(f"[{le._now_iso()}] live start job={args.job} dry={live_executor.is_dry_run()}",
+          flush=True)
     try:
         if args.job == "weather-live":
             job_weather_live()
@@ -112,6 +116,7 @@ def main():
             live_settle.job_maintain_live()
     except Exception:
         tb = traceback.format_exc()
+        print(tb, file=sys.stderr, flush=True)
         try:
             le.init_live_db()
             conn = le.get_live_db()
