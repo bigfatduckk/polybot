@@ -58,7 +58,13 @@ def job_weather_live():
             sigs, evaluated = le.read_new_signals(paper_conn, live_conn)
             state = le.load_live_state(live_conn)
             posted = dry_signed = rejected = skipped = 0
+            skip_cities = le.live_skip_cities()
             for sig in sigs:
+                if sig.city.upper() in skip_cities:
+                    le.log_tick(live_conn, "weather-live", "skip:city",
+                                {"candidate_id": sig.candidate_id, "city": sig.city})
+                    skipped += 1
+                    continue
                 prepared = live_executor.prepare_order(sig, client, live_conn, state.bankroll)
                 if prepared is None:
                     skipped += 1

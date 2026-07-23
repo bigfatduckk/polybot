@@ -499,3 +499,13 @@ def test_control_unknown_subcommand(tmp_path, monkeypatch):
     _setup_control(tmp_path, monkeypatch)
     out = lc.handle_control(["frobnicate"])
     assert "usage" in out
+
+
+def test_live_skip_cities_parses_env(monkeypatch):
+    monkeypatch.setenv("LIVE_SKIP_CITIES", "Hong Kong, Tokyo,")
+    assert le.live_skip_cities() == {"HONG KONG", "TOKYO"}
+
+
+def test_live_skip_cities_empty_default(monkeypatch):
+    monkeypatch.delenv("LIVE_SKIP_CITIES", raising=False)
+    assert le.live_skip_cities() == set()

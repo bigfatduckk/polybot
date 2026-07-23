@@ -39,6 +39,16 @@ HKT = timezone(timedelta(hours=8))
 PAPER_DB_PATH = str(BOT_DIR / "polymarket_bot.db")
 
 
+def live_skip_cities():
+    """Cities to skip when OPENING live positions (env LIVE_SKIP_CITIES,
+    comma-separated). Lets the operator pause a single city — e.g. HK during a
+    typhoon, where bias calibration is contaminated — without halting the whole
+    live arm or touching existing positions (which still settle via
+    maintain-live). Read at runtime so .env (load_dotenv in run_live) applies."""
+    raw = os.environ.get("LIVE_SKIP_CITIES", "")
+    return {c.strip().upper() for c in raw.split(",") if c.strip()}
+
+
 # ── live DB handle (writable) ──────────────────────────────────────────────
 def get_live_db():
     conn = sqlite3.connect(LIVE_DB_PATH)
