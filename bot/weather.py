@@ -1,6 +1,7 @@
 import hashlib
 import json
 import re
+import statistics
 from dataclasses import dataclass, field
 
 import httpx
@@ -10,7 +11,11 @@ from config import (
     MODEL_COL_SUFFIX,
     MODELS,
     OPEN_METEO_ENSEMBLE,
+    SIGMA_CALM,
     STATION_BIAS_MIN,
+    VAR_GATE_K,
+    VAR_GATE_REARM,
+    _C,
     tls_verify,
 )
 
@@ -170,7 +175,47 @@ def station_bias(residuals):
     if len(residuals) < 5:
         return 0.0
     last = residuals[-20:]
-    b = sum(last) / len(last)
+    # _C: robust bias = EWM halflife-10 over winsorized residuals. Winsorizing
+    # (clip to window-median ± 3×MAD) bounds any single OOD day's pull while
+    # keeping the point in the series; plain EWM lets one storm shift bias ~0.7σ.
+    b = _ewm(_winsorize(last)) if _C else sum(last) / len(last)
     if abs(b) < STATION_BIAS_MIN:
         return 0.0
     return b
+
+
+def _winsorize(xs):
+    if len(xs) < 3:
+        return list(xs)
+    med = statistics.median(xs)
+    mad = statistics.median([abs(x - med) for x in xs])
+    lo, hi = med - 3 * mad, med + 3 * mad
+    return [min(hi, max(lo, x)) for x in xs]
+
+
+def _ewm(xs, halflife=10):
+    alpha = 1.0 - 2.0 ** (-1.0 / halflife)
+    acc = wsum = 0.0
+    for x in xs:
+        acc = (1.0 - alpha) * acc + alpha * x
+        wsum = (1.0 - alpha) * wsum + alpha
+    return acc / wsum if wsum else 0.0
+
+
+def ood_tripped(residuals, bias, sigma=SIGMA_CALM, k=VAR_GATE_K,
+                rearm=VAR_GATE_REARM):
+    """Stateless hysteresis: is a city currently in an OOD trip? Walks the
+    residual series newest→oldest. Re-arms (False) at the first point with
+    |r-bias| < rearm*σ. Trips (True) if a >k*σ point precedes any re-arm — i.e.
+    the extreme is still active. Fires on the first observed OOD day; stays
+    tripped through the rearm..k band. Uses RAW residuals; bias is the
+    winsorized-EWM estimate (separation per Fable fragile-point #3)."""
+    if not sigma or len(residuals) < 5:
+        return False
+    for r in reversed(residuals):
+        z = abs(r - bias)
+        if z < rearm * sigma:
+            return False
+        if z > k * sigma:
+            return True
+    return False
