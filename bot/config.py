@@ -64,6 +64,18 @@ MAX_LEAD_HOURS = 48
 CONSENSUS_MAX_DISAGREEMENT_C = 1.5
 STATION_BIAS_MIN = 0.30
 
+# Bot C OOD robustness gate (paper only; _C). Stateless hysteresis on the
+# per-city residual series: stand down a city's new candidates when the newest
+# residual's |r - bias_C| exceeds K*SIGMA_CALM; stay down until it falls back
+# under REARM*SIGMA_CALM (REARM < K → hysteresis). SIGMA_CALM is a FROZEN
+# calm-baseline scale (pooled de-meaned MAD × 1.4826, 1.0°C floor) set once at
+# launch by backtest_variance_gate.py — NOT rolling, or a storm inflates its own
+# threshold and the gate self-disarms. ≤10d history → heuristic; proper K tuning
+# deferred to ≥90d. Typhoon run = smoke test ("does it trip?"), not validation.
+SIGMA_CALM = 1.0       # °C; conservative floor — replace via backtest_variance_gate.py
+VAR_GATE_K = 4.0       # trip threshold (× σ_calm)
+VAR_GATE_REARM = 2.5   # re-arm threshold (× σ_calm)
+
 PER_TRADE_CAP_FRAC = 0.05
 PER_TRADE_CAP_ABS = 50.0
 DAILY_LOSS_HALT_FRAC = 0.05
@@ -72,14 +84,18 @@ MAX_POSITIONS_PER_REGION_DAY = 3
 PRICE_BAND = (0.03, 0.97)
 PAPER_BANKROLL = 1000.0
 
-# A/B instance switch. BOT_INSTANCE=B forks the weather bot into a separate
-# paper DB/HALT (Bot B = climatology blend; A = current baseline). One codebase,
-# config-driven — not a cp -r. B crons weather+maintain only (weather A/B).
+# A/B/C instance switch. One codebase, config-driven — not a cp -r.
+#   B = climatology blend (α linear-pool w/ ERA5 climatology); weather+maintain only.
+#   C = paper-only OOD-robustness variant (winsorized-EWM bias + residual-z gate);
+#       never run_live.py, never a wallet. Same weather scan as A.
 BOT_INSTANCE = os.environ.get("BOT_INSTANCE", "A").upper()
 _B = BOT_INSTANCE == "B"
-INST_TAG = "B" if _B else "A"
-DB_PATH = str(BOT_DIR / ("polymarket_bot_B.db" if _B else "polymarket_bot.db"))
-HALT_FILE = str(BOT_DIR / ("HALT_B" if _B else "HALT"))
+_C = BOT_INSTANCE == "C"
+INST_TAG = "B" if _B else ("C" if _C else "A")
+DB_PATH = str(BOT_DIR / (
+    "polymarket_bot_B.db" if _B
+    else ("polymarket_bot_C.db" if _C else "polymarket_bot.db")))
+HALT_FILE = str(BOT_DIR / ("HALT_B" if _B else ("HALT_C" if _C else "HALT")))
 
 # Climatology blend (Bot B only). Linear pool: p=(1-α)*p_model + α*p_clim.
 # p_clim = historical fraction of daily-highs (±CLIM_WINDOW_DAYS around the
