@@ -36,6 +36,7 @@ from config import (
     TELEGRAM_TOKEN_ENV,
     WEATHER_CALIB_PATH,
     WEATHER_EVENT_TITLE_RE,
+    _C,
     tls_verify,
 )
 
@@ -431,6 +432,8 @@ def scan_weather(runs, snapshots):
             continue
         residuals = _load_residuals(conn, city)
         bias = w.station_bias(residuals)
+        if _C and w.ood_tripped(residuals, bias):
+            continue  # OOD regime — stand down new candidates for this city
         buckets = [s.bucket for s in group]
         if not w.consensus_ok(city_runs, mdate):
             continue
