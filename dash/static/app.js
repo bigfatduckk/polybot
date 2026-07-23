@@ -52,8 +52,9 @@ function renderRisk(r){
     const bg = val>=max*frac ? 'var(--red)' : 'var(--amber)';
     return `<div class="gauge"><span>${label}</span><div class="bar"><div class="fill ${cls}" style="width:${pct}%;background:${bg}"></div></div><span>${val}/${max}</span></div>`;
   };
-  el.innerHTML = bar('Open',r.open_positions,r.max_open,1)+bar('Consec loss',r.consec_loss,r.max_consec,1)
-    +`<div class="gauge"><span>Daily loss</span><div class="bar"><div class="fill" style="width:${Math.min(100,Math.abs(r.daily_loss)/r.daily_loss_halt*100)}%"></div></div><span>${r.daily_loss}/${r.daily_loss_halt}</span></div>`
+  el.innerHTML = `<div class="gauge"><span>Open</span><div class="bar"></div><span>${r.open_positions}</span></div>`+bar('Consec loss',r.consec_loss,r.max_consec,1)
+    +`<div class="gauge"><span>Daily loss</span><div class="bar"><div class="fill" style="width:${r.daily_loss_halt==null?0:Math.min(100,Math.abs(r.daily_loss)/r.daily_loss_halt*100)}%"></div></div><span>${r.daily_loss}/${r.daily_loss_halt==null?'—':r.daily_loss_halt}</span></div>`
+    +`<div class="gauge"><span>Bankroll</span><div class="bar"></div><span>${r.bankroll==null?'stale':'$'+r.bankroll.toFixed(0)}</span></div>`
     +`<div class="gauge"><span>HALT</span><span style="color:${r.halted?'var(--red)':'var(--green)'}">${r.halted?'HALTED':'ok'}</span></div>`;
 }
 

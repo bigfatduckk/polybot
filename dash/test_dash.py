@@ -287,10 +287,12 @@ def test_api_risk_calib_stationbias():
     c = dash.app.test_client()
     r = c.get("/api/risk").get_json()
     assert r["open_positions"] == 1
-    assert r["max_open"] == 20
-    assert r["consec_loss"] == 2          # last 2 settlements both losses
+    assert "max_open" not in r            # Fable d: fictitious total-open cap removed
+    assert r["consec_loss"] == 2          # last-20 settlements both losses
     assert r["max_consec"] == 6
-    assert r["daily_loss_halt"] == 100.0   # 0.10 * 1000
+    assert r["bankroll"] == 200.0         # min(1000, usdc=200) — cash-aware (Fable c)
+    assert r["daily_loss_halt"] == 20.0   # 0.10 * 200
+    assert r["per_trade_cap"] == 10.0     # min(0.05*200, 50)
     assert r["halted"] is True
     cal = c.get("/api/calib").get_json()
     assert cal["latest"]["edge"] == "weather"

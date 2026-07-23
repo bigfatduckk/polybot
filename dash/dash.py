@@ -409,15 +409,20 @@ def api_funnel():
     return jsonify({"ts": now_iso(), "stages": stages})
 
 
-# Risk constants mirrored from bot/config.py (LIVE_* values, verified 2026-07-22).
-# Mirrored as literals so the dashboard does not import the bot tree (no env reads).
+# Risk formula inputs mirrored from bot/config.py LIVE_* values (verified
+# 2026-07-22). Mirrored as literals so the dashboard does not import the bot
+# tree (no env reads). Derived values (bankroll/daily_loss_halt/per_trade_cap)
+# are computed per-request from the live USDC balance — storing the derived
+# result (the old daily_loss_halt=100 / per_trade_cap=50) was how the dashboard
+# diverged from the bot once cash-coupling landed (Fable c). max_open removed:
+# the total-open cap isn't enforced in live sizing (Fable d).
 RISK = {
-    "max_open": 20,                 # bankroll-bound ceiling (LIVE_MAX_OPEN_POSITIONS total cap REMOVED 2026-07-23 to mirror paper; = LIVE_BANKROLL/LIVE_PER_TRADE_CAP_ABS = 1000/50)
-    "max_consec": 6,                # LIVE_CONSECUTIVE_LOSS_HALT
-    "daily_loss_halt": 100.0,       # LIVE_DAILY_LOSS_HALT_FRAC * LIVE_BANKROLL = 0.10*1000
-    "per_trade_cap": 50.0,          # LIVE_PER_TRADE_CAP_ABS
-    "min_edge": 0.08,               # LIVE_MIN_EDGE
-    "bankroll": 1000.0,             # LIVE_BANKROLL
+    "bankroll_cap": 1000.0,        # LIVE_BANKROLL — bankroll = min(cap, usdc)
+    "daily_loss_frac": 0.10,       # LIVE_DAILY_LOSS_HALT_FRAC — × usdc
+    "per_trade_frac": 0.05,        # LIVE_PER_TRADE_CAP_FRAC — min(×usdc, abs)
+    "per_trade_abs": 50.0,         # LIVE_PER_TRADE_CAP_ABS
+    "max_consec": 6,               # LIVE_CONSECUTIVE_LOSS_HALT
+    "min_edge": 0.08,              # LIVE_MIN_EDGE
 }
 
 
@@ -426,22 +431,36 @@ def api_risk():
     open_rows, _ = _query(conn_live,
         "SELECT COUNT(*) AS n FROM live_orders WHERE status IN ('posted','open','partial','filled')")
     open_n = open_rows[0]["n"] if open_rows else 0
-    cut = _cutoff_ts(24)
-    sett, _ = _query(conn_live,
-        "SELECT pnl, resolved_yes FROM live_settlements WHERE ts >= ? ORDER BY id DESC", (cut,))
+    # Cash-aware (Fable c): read the latest persisted USDC balance (maintain-live
+    # writes it every 15min) and apply the same three formulas as live_engine.
+    # Stale / never-populated → None markers, not a fabricated 1000 bankroll.
+    bal_rows, _ = _query(conn_live, "SELECT usdc FROM live_balances ORDER BY id DESC LIMIT 1")
+    usdc = bal_rows[0]["usdc"] if bal_rows and bal_rows[0]["usdc"] is not None else None
+    if usdc is None:
+        bankroll = daily_loss_halt = per_trade_cap = None
+    else:
+        bankroll = min(RISK["bankroll_cap"], usdc)
+        daily_loss_halt = round(RISK["daily_loss_frac"] * usdc, 2)
+        per_trade_cap = round(min(RISK["per_trade_frac"] * usdc, RISK["per_trade_abs"]), 2)
+    # daily loss = UTC-day window; consec = last-20 settlements (mirrors
+    # live_engine.py: substr(ts,1,10)=today + ORDER BY id DESC LIMIT 20).
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    daily_rows, _ = _query(conn_live,
+        "SELECT COALESCE(SUM(pnl),0) AS s FROM live_settlements WHERE substr(ts,1,10)=?",
+        (today,))
+    daily_loss = float(daily_rows[0]["s"]) if daily_rows else 0.0
+    sett, _ = _query(conn_live, "SELECT pnl FROM live_settlements ORDER BY id DESC LIMIT 20")
     consec = 0
     for r in (sett or []):
         if (r["pnl"] or 0) < 0:
             consec += 1
         else:
             break
-    daily_rows, _ = _query(conn_live, "SELECT COALESCE(SUM(pnl),0) AS s FROM live_settlements WHERE ts >= ?", (cut,))
-    daily_loss = float(daily_rows[0]["s"]) if daily_rows else 0.0
     halted, _ = _latest_halt_halted(conn_live)
-    return jsonify({"ts": now_iso(), "open_positions": open_n, "max_open": RISK["max_open"],
-                     "consec_loss": consec, "max_consec": RISK["max_consec"],
-                     "daily_loss": round(daily_loss, 2), "daily_loss_halt": RISK["daily_loss_halt"],
-                     "per_trade_cap": RISK["per_trade_cap"], "halted": halted})
+    return jsonify({"ts": now_iso(), "open_positions": open_n,
+                    "consec_loss": consec, "max_consec": RISK["max_consec"],
+                    "daily_loss": round(daily_loss, 2), "daily_loss_halt": daily_loss_halt,
+                    "per_trade_cap": per_trade_cap, "bankroll": bankroll, "halted": halted})
 
 
 @app.get("/api/calib")
