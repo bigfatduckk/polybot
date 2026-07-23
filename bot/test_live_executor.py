@@ -300,6 +300,18 @@ def test_rpc_result_matches_by_id_and_detects_errors():
     assert lx._rpc_result([{"id": 1, "result": "0x"}], 1) is None
 
 
+def test_drained_wallet_decodes_to_zero_not_none():
+    """Fable (e): a genuinely-drained wallet returns a 64-zero word (decodes to
+    0.0 → alert fires), NOT a bare 0x (RPC-null → None → alert skipped). The
+    decode path must preserve the None-vs-0.0 distinction end-to-end."""
+    zero_word = "0x" + "0" * 64
+    # 64-zero word → _rpc_result passes through, _hex_to_float → 0.0 (alert fires)
+    assert lx._rpc_result([{"id": 2, "result": zero_word}], 2) == zero_word
+    assert lx._hex_to_float(zero_word, lx.USDC_DECIMALS) == 0.0
+    # bare "0x" (RPC-null marker) → _rpc_result → None (alert skipped, not 0.0)
+    assert lx._rpc_result([{"id": 2, "result": "0x"}], 2) is None
+
+
 def _fake_clob_client(monkeypatch, *, derive_raises, derive_returns="derived", create_returns="created"):
     """Inject a fake py_clob_client_v2.ClobClient recording derive/create calls."""
     calls = {"derive": 0, "create": 0}
