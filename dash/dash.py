@@ -403,12 +403,17 @@ def _price_map():
 
 def _unrealized(side, entry, size, yes_mid):
     """Mark-to-market for one open position. YES: size*(yes_mid-entry);
-    NO: size*((1-yes_mid)-entry). None if any input missing."""
+    NO: size*((1-yes_mid)-entry). None if any input missing.
+    Side vocabularies: paper-A orders use 'YES'/'NO'; live_orders use
+    'buy'/'sell' (LiveOrderSpec: buy=YES token, sell=NO token)."""
     if entry is None or size is None or yes_mid is None:
         return None
     s = str(side or "").upper()
-    cur = yes_mid if s == "YES" else (1.0 - yes_mid) if s == "NO" else None
-    if cur is None:
+    if s in ("YES", "BUY"):
+        cur = yes_mid
+    elif s in ("NO", "SELL"):
+        cur = 1.0 - yes_mid
+    else:
         return None
     return round(size * (cur - entry), 2)
 
