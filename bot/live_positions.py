@@ -55,7 +55,7 @@ def format_live_pnl(path=None):
             n_set, realized = row["n"], float(row["p"] or 0.0)
         except sqlite3.OperationalError:
             pass
-        lines = [f"[A-LIVE] live bankroll ${LIVE_BANKROLL:.0f}  (REAL funds — $200 probe)", ""]
+        lines = [f"[A-LIVE] live bankroll ${LIVE_BANKROLL:.0f}  (REAL funds — edge validation)", ""]
         lines.append("=== open positions ===")
         if not open_rows:
             lines.append("  (no open positions)")
