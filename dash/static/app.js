@@ -37,10 +37,15 @@ function renderHealth(h){
   if(pnl!=null){
     pnlEl.textContent = 'PnL '+fmtPnl(pnl)+(live.settled?` (${live.settled})`:'');
     pnlEl.className = 'stat '+(pnl>=0?'pos-pnl-pos':'pos-pnl-neg');
-  } else {
-    pnlEl.textContent = 'PnL —';
-    pnlEl.className = 'stat';
-  }
+  } else { pnlEl.textContent = 'PnL —'; pnlEl.className = 'stat'; }
+  // Unrealized = mark-to-market of open positions vs entry (stale-snapshot mark).
+  const upnlEl = document.getElementById('stat-upnl');
+  const u = live.unrealized_pnl;
+  if(u!=null){
+    const tag = live.marked!=null && live.open!=null && live.marked<live.open ? ` ${live.marked}/${live.open}` : '';
+    upnlEl.textContent = 'uPnL '+fmtPnl(u)+tag;
+    upnlEl.className = 'stat '+(u>=0?'pos-pnl-pos':'pos-pnl-neg');
+  } else { upnlEl.textContent = 'uPnL —'; upnlEl.className = 'stat'; }
   document.getElementById('stat-bankroll').textContent = 'Cash '+(live.bankroll!=null?'$'+Number(live.bankroll).toFixed(2):'—');
   document.getElementById('stat-gas').textContent = 'Gas '+(live.gas!=null?Number(live.gas).toFixed(1):'—')+' POL';
   document.getElementById('stat-age').textContent = ageLabel(live.last_tick_age);
@@ -64,8 +69,13 @@ function renderPositions(p){
     const cls = up==='YES'?'pos-yes':(up==='NO'?'pos-no':'');
     return `<span class="${cls}">${s}</span>`;
   };
-  el.innerHTML = `<table><thead><tr><th>Inst</th><th>Trade</th><th>Side</th><th>Date</th><th>Px</th><th>Size</th><th>Status</th></tr></thead><tbody>${
-    rows.map(r=>`<tr><td>${r.instance}</td><td class="desc">${r.desc||r.market_id||''}</td><td>${sideCell(r.side)}</td><td>${r.date||'—'}</td><td>${r.price!=null?r.price.toFixed(3):'—'}</td><td>${r.size!=null?r.size.toFixed(0):'—'}</td><td>${r.status||''}</td></tr>`).join('')
+  const upnlCell=(u)=>{
+    if(u==null) return '<span class="dim">—</span>';
+    const cls = u>=0?'pos-pnl-pos':'pos-pnl-neg';
+    return `<span class="${cls}">${fmtPnl(u)}</span>`;
+  };
+  el.innerHTML = `<table><thead><tr><th>Inst</th><th>Trade</th><th>Side</th><th>Date</th><th>Px</th><th>Size</th><th>USD</th><th>uPnL</th><th>Status</th></tr></thead><tbody>${
+    rows.map(r=>`<tr><td>${r.instance}</td><td class="desc">${r.desc||r.market_id||''}</td><td>${sideCell(r.side)}</td><td>${r.date||'—'}</td><td>${r.price!=null?r.price.toFixed(3):'—'}</td><td>${r.size!=null?r.size.toFixed(0):'—'}</td><td>${r.cost!=null?'$'+r.cost.toFixed(2):'—'}</td><td>${upnlCell(r.upnl)}</td><td>${r.status||''}</td></tr>`).join('') || '<tr><td colspan="9">no open positions</td></tr>'
   }</tbody></table>`;
 }
 
@@ -79,16 +89,28 @@ function renderCandidates(c){
 
 function renderRisk(r){
   const el=document.getElementById('risk-gauges'); if(!r) return;
-  const bar=(label,val,max,frac)=>{
-    const pct = max? Math.min(100, Math.abs(val)/max*100):0;
-    const cls = val>=max*frac ? 'crit':'warn';
-    const bg = val>=max*frac ? 'var(--red)' : 'var(--amber)';
-    return `<div class="gauge"><span>${label}</span><div class="bar"><div class="fill ${cls}" style="width:${pct}%;background:${bg}"></div></div><span>${val}/${max}</span></div>`;
+  const loss = (r.daily_loss==null)?null:Number(r.daily_loss);
+  const lossHalt = r.daily_loss_halt;
+  // bar only fills on losses toward the halt threshold (a green day = empty bar)
+  const lossFrac = (lossHalt && loss!=null) ? Math.min(1, Math.max(0,-loss)/lossHalt) : null;
+  const consecFrac = r.max_consec ? Math.min(1, r.consec_loss/r.max_consec) : null;
+  const money = v=> v==null?'—':((v>=0?'+$':'-$')+Math.abs(v).toFixed(2));
+  const tile=(label,val,sub,barFrac,color)=>{
+    const vc = color?` style="color:${color}"`:'';
+    const bar = barFrac!=null
+      ? `<div class="rbar"><div class="rfill" style="width:${(barFrac*100).toFixed(0)}%;background:${color||'var(--accent)'}"></div></div>` : '';
+    return `<div class="rtile"><div class="rlabel">${label}</div><div class="rval"${vc}>${val}</div>${sub?`<div class="rsub">${sub}</div>`:''}${bar}</div>`;
   };
-  el.innerHTML = `<div class="gauge"><span>Open</span><div class="bar"></div><span>${r.open_positions}</span></div>`+bar('Consec loss',r.consec_loss,r.max_consec,1)
-    +`<div class="gauge"><span>Daily loss</span><div class="bar"><div class="fill" style="width:${r.daily_loss_halt==null?0:Math.min(100,Math.abs(r.daily_loss)/r.daily_loss_halt*100)}%"></div></div><span>${r.daily_loss}/${r.daily_loss_halt==null?'—':r.daily_loss_halt}</span></div>`
-    +`<div class="gauge"><span>Bankroll</span><div class="bar"></div><span>${r.bankroll==null?'stale':'$'+r.bankroll.toFixed(0)}</span></div>`
-    +`<div class="gauge"><span>HALT</span><span style="color:${r.halted?'var(--red)':'var(--green)'}">${r.halted?'HALTED':'ok'}</span></div>`;
+  const consecColor = r.consec_loss>=r.max_consec ? 'var(--red)' : (r.consec_loss>=r.max_consec-2 ? 'var(--amber)' : null);
+  const todayColor = loss==null ? null : (loss<0 ? 'var(--red)' : 'var(--green)');
+  el.innerHTML = `<div class="risk-grid">` +
+    tile('Open positions', r.open_positions!=null?r.open_positions:'—', null, null) +
+    tile('Consec losses', `${r.consec_loss}/${r.max_consec}`, `halt at ${r.max_consec}`, consecFrac, consecColor) +
+    tile("Today's PnL", money(loss), lossHalt!=null?`halt @ -$${lossHalt.toFixed(2)}`:'', lossFrac, todayColor) +
+    tile('Per-trade cap', r.per_trade_cap!=null?'$'+Number(r.per_trade_cap).toFixed(2):'—', null, null) +
+    tile('Cash (pUSD)', r.bankroll!=null?'$'+Number(r.bankroll).toFixed(2):'—', null, null) +
+    tile('Arm status', r.halted?'HALTED':'LIVE', null, null, r.halted?'var(--red)':'var(--green)') +
+    `</div>`;
 }
 
 async function getJSON(url){
