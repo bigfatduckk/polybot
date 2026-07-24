@@ -1,4 +1,6 @@
 import json
+import sqlite3
+from datetime import datetime, timezone
 
 import markets
 from config import (
@@ -6,6 +8,7 @@ from config import (
     ARB_MIN_DEPTH,
     ARB_MIN_GAP,
     ARB_SCAN_TAGS,
+    DB_PATH,
     PER_TRADE_CAP_ABS,
 )
 from edge_engine import store_snapshot
@@ -44,9 +47,8 @@ def compute_bundle(siblings, event_id=""):
             fees = sum(_fee(m, e) for m, e in zip(elig, effs))
             gap = 1.0 - sum_eff
             net = gap - fees
-            if net > ARB_MIN_GAP:
-                bundles.append(_bundle(event_id, "buy", elig, effs, shares,
-                                       sum_eff, gap, net, min_depth))
+            bundles.append(_bundle(event_id, "buy", elig, effs, shares,
+                                   sum_eff, gap, net, min_depth))
     if _has_depth(elig, "sell"):
         shares = min(min_depth_bid, cap_shares)
         effs = [_walk_book(m.bids, shares) for m in elig]
@@ -55,17 +57,18 @@ def compute_bundle(siblings, event_id=""):
             fees = sum(_fee(m, e) for m, e in zip(elig, effs))
             gap = sum_eff - 1.0
             net = gap - fees
-            if net > ARB_MIN_GAP:
-                bundles.append(_bundle(event_id, "sell", elig, effs, shares,
-                                       sum_eff, gap, net, min_depth_bid))
+            bundles.append(_bundle(event_id, "sell", elig, effs, shares,
+                                   sum_eff, gap, net, min_depth_bid))
     if not bundles:
         return None
     return max(bundles, key=lambda b: b["net_gap"])
 
 
 def _bundle(event_id, side, elig, effs, shares, sum_eff, gap, net, min_depth):
+    bundle_id = f"{event_id}|{side}"
     return {
         "event_id": event_id,
+        "bundle_id": bundle_id,
         "side": side,
         "shares": shares,
         "sum_eff": sum_eff,
@@ -78,8 +81,29 @@ def _bundle(event_id, side, elig, effs, shares, sum_eff, gap, net, min_depth):
              "price": e, "shares": shares}
             for m, e in zip(elig, effs)
         ],
-        "meta": {"fees": sum_eff - gap, "side": side},
+        "meta": {"fees": sum_eff - gap, "side": side, "bundle_id": bundle_id},
     }
+
+
+def _log_gap(scan_id, b):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS arb_gap_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, scan_id INTEGER,
+            event_id TEXT, side TEXT, n_outcomes INTEGER, sum_eff REAL,
+            gap REAL, net_gap REAL, min_depth REAL, qualifies INTEGER
+        )"""
+    )
+    conn.execute(
+        """INSERT INTO arb_gap_log(ts, scan_id, event_id, side, n_outcomes,
+           sum_eff, gap, net_gap, min_depth, qualifies)
+           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        (datetime.now(timezone.utc).isoformat(timespec="seconds"), scan_id,
+         b["event_id"], b["side"], b["n_outcomes"], b["sum_eff"], b["gap"],
+         b["net_gap"], b["min_depth"], int(b["net_gap"] > ARB_MIN_GAP)),
+    )
+    conn.commit()
+    conn.close()
 
 
 def scan_arb(scan_id):
@@ -98,6 +122,8 @@ def scan_arb(scan_id):
                 store_snapshot(EDGE, m, {"scan_id": scan_id, "event_id": ev_id})
             b = compute_bundle(sibs, event_id=ev_id)
             if b:
-                b["scan_id"] = scan_id
-                bundles.append(b)
+                _log_gap(scan_id, b)
+                if b["net_gap"] > ARB_MIN_GAP:
+                    b["scan_id"] = scan_id
+                    bundles.append(b)
     return bundles

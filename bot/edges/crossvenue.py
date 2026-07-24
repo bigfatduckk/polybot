@@ -3,6 +3,11 @@ import re
 import sqlite3
 from datetime import datetime, timezone
 
+# KILLED 2026-07-25: Kalshi is CFTC-regulated, US-persons-only, not accessible
+# from Hong Kong — the HK leg cannot be traded, so cross-venue gap info has no
+# action attached. Scan-only, not cron'd, no live arm. Retained for reference.
+# See bot/PLAN_STATUS.md + Remaining Edges Audit 2026-07-25.md (Q1).
+
 import httpx
 import markets
 from config import (

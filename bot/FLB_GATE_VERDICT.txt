@@ -1,0 +1,20 @@
+FLB OOS GATE VERDICT — 2026-07-25
+run: /root/polybot/.venv/bin/python flb_oos_gate.py
+split: md5(market_id)%5==0 -> 20% test (49268 recs) / 80% train (198099). final snapshot TAUTOLOGY-EXCLUDED; scored 24h+7d only, in-band [0.03,0.97]. n_test=37651 clusters=25553.
+
+GATE-1 INFO (does calib add info beyond raw price, OOS, cluster-boot by market_id):
+  calib vs raw : mean=0.003723  95% CI=[0.002195, 0.005257]  -> PASS (CI>0)
+  isotonic ctrl: mean=0.002115  95% CI=[0.000074, 0.003937]
+  calib beats isotonic -> FLB-specific (not generic recalibration). PASS.
+
+GATE-2 PnL-after-costs (trade both sides when |p_model-price|>COST=0.03):
+  calib    : n=19418 mean=+$0.0219  95% CI=[+$0.0145, +$0.0295] -> PASS (CI>0, edge>costs)
+  isotonic : n=22379 mean=+$0.0204  95% CI=[+$0.0130, +$0.0278]
+  raw_price: 0 trades (gap=0 by construction, sanity)
+  calib beats isotonic -> PASS.
+
+VERDICT: FLB SURVIVES the T1.1-equivalent gate that killed weather.
+  calib ADDS information beyond entry price OOS (CI>0) AND generates
+  positive PnL after 3% costs (CI>0), beating generic isotonic recalibration.
+  NOT fiction-by-construction. Edge is real but THIN (~2.2% per-trade after costs).
+Next: realistic-fill PnL (P4) + fresh-OOS n>=200 signals (P6) before live un-HALT.

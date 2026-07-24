@@ -38,7 +38,7 @@ def _norm_cdf(x):
 
 def prob_above(spot, strike, sigma, tau, r=0.0):
     if sigma <= 0.0 or tau <= 0.0 or strike <= 0.0 or spot <= 0.0:
-        return 1.0 if spot > strike else 0.0
+        return 0.5
     d2 = (math.log(spot / strike) + (r - 0.5 * sigma * sigma) * tau) / (sigma * math.sqrt(tau))
     return _norm_cdf(d2)
 

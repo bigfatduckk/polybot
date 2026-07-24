@@ -1,0 +1,265 @@
+=== USUD ORACLE AUDIT (stored pm_snapshots + live gamma + Yahoo cross-check) ===
+run ts: 2026-07-24T18:32:22+00:00
+
+========================================================================
+SPY  (yahoo sym SPY)  audit date=2026-07-24 (today=2026-07-24)
+========================================================================
+[stored] market_id=3053948 end_date=2026-07-24T20:00:00Z
+[stored] question: SPY (SPY) Up or Down on July 24?
+[stored] market.endDate: 2026-07-24T20:00:00Z
+[stored] market.resolutionSource: https://pythdata.app/explore/Equity.US.SPY%2FUSD
+[stored] market.description:
+This market will resolve to "Up" if the Close price for S&P 500 (SPY) on July 24, 2026 is higher than the Close price for S&P 500 (SPY) on the most recent prior trading day.
+
+This market will resolve to "Down" if the Close price for S&P 500 (SPY) on July 24, 2026 is lower than the Close price for S&P 500 (SPY) on the most recent prior trading day.
+
+E.g., ordinarily, a market on Monday would refer to the previous Friday for its most recent closing price, unless that Friday were a market holiday, in which case it would refer to Thursday, or the next most recent trading day.
+
+If the two specified closing prices are exactly equal, this market will resolve 50-50. Closing prices will be used exactly as published by Pyth, without rounding.
+
+If S&P 500 (SPY) does not trade at all during the regular session, the market will resolve 50-50.
+
+For a standard full trading session, the closing price refers to the Pyth "Close" value of the 1-minute candle corresponding to the final minute of regular trading hours on the primary exchange.
+
+If either of the relevant days has no valid Pyth Close value for the 1-minute candle corresponding to the end of regular trading hours on the primary exchange, the market will use the last valid Pyth price achieved during the regular trading hours of the primary exchange as the effective closing price. If no valid Pyth price exists for that trading day due to a system outage, data failure, or other technical disruption, the official closing price published by the primary exchange on which the listed security trades will be used to determine the closing price for that day.
+
+Only prices achieved during the regular trading hours of the primary exchange on which the listed security trades (typically 9:30 AM – 4:00 PM ET) will be considered.
+
+In the event of a stock split, reverse stock split, or similar corporate action affecting the listed security during the listed time frame, this market will resolve based on split-adjusted prices as displayed on Pyth.
+
+The resolution source for this market will be Pyth, specifically the "Close" values for the relevant 1-minute candle available at https://pythdata.app/explore/Equity.US.SPY%2FUSD. Historical 1-minute candles may be accessed by appending a Unix timestamp (seconds) to the Pyth chart URL using the "t=" parameter. Any timestamp within the listed market time frame may be used to view the relevant candle data (e.g., https://pythdata.app/explore/Equity.US.SPY%2FUSD?t=1773432000).
+[live-active] slug=spy-up-or-down-on-july-24-2026 event.endDate=2026-07-24T20:00:00Z event.resolutionSource=https://pythdata.app/explore/Equity.US.SPY%2FUSD
+[live-active] market.endDate=2026-07-24T20:00:00Z resolutionSource=https://pythdata.app/explore/Equity.US.SPY%2FUSD
+[live-active] description:
+This market will resolve to "Up" if the Close price for S&P 500 (SPY) on July 24, 2026 is higher than the Close price for S&P 500 (SPY) on the most recent prior trading day.
+
+This market will resolve to "Down" if the Close price for S&P 500 (SPY) on July 24, 2026 is lower than the Close price for S&P 500 (SPY) on the most recent prior trading day.
+
+E.g., ordinarily, a market on Monday would refer to the previous Friday for its most recent closing price, unless that Friday were a market holiday, in which case it would refer to Thursday, or the next most recent trading day.
+
+If the two specified closing prices are exactly equal, this market will resolve 50-50. Closing prices will be used exactly as published by Pyth, without rounding.
+
+If S&P 500 (SPY) does not trade at all during the regular session, the market will resolve 50-50.
+
+For a standard full trading session, the closing price refers to the Pyth "Close" value of the 1-minute candle corresponding to the final minute of regular trading hours on the primary exchange.
+
+If either of the relevant days has no valid Pyth Close value for the 1-minute candle corresponding to the end of regular trading hours on the primary exchange, the market will use the last valid Pyth price achieved during the regular trading hours of the primary exchange as the effective closing price. If no valid Pyth price exists for that trading day due to a system outage, data failure, or other technical disruption, the official closing price published by the primary exchange on which the listed security trades will be used to determine the closing price for that day.
+
+Only prices achieved during the regular trading hours of the primary exchange on which the listed security trades (typically 9:30 AM – 4:00 PM ET) will be considered.
+
+In the event of a stock split, reverse stock split, or similar corporate action affecting the listed security during the listed time frame, this market will resolve based on split-adjusted prices as displayed on Pyth.
+
+The resolution source for this market will be Pyth, specifically the "Close" values for the relevant 1-minute candle available at https://pythdata.app/explore/Equity.US.SPY%2FUSD. Historical 1-minute candles may be accessed by appending a Unix timestamp (seconds) to the Pyth chart URL using the "t=" parameter. Any timestamp within the listed market time frame may be used to view the relevant candle data (e.g., https://pythdata.app/explore/Equity.US.SPY%2FUSD?t=1773432000).
+[yahoo] {'spot': 738.715, 'chartPreviousClose': 738.18, 'previousClose': 738.18, 'exchange': 'PCX', 'symbol': 'SPY'}
+
+========================================================================
+SPX  (yahoo sym ^GSPC)  audit date=2026-07-24 (today=2026-07-24)
+========================================================================
+[stored] market_id=3053856 end_date=2026-07-24T20:00:00Z
+[stored] question: S&P 500 (SPX) Up or Down on July 24?
+[stored] market.endDate: 2026-07-24T20:00:00Z
+[stored] market.resolutionSource: https://www.wsj.com/market-data/stocks
+[stored] market.description:
+This market will resolve to "Up" if the official S&P 500 Index closing price for S&P 500 (SPX) on Friday, July 24, 2026 is higher than the official S&P 500 Index closing price for SPX on the most recent prior trading day.
+
+This market will resolve to "Down" if the official S&P 500 Index closing price for S&P 500 (SPX) on Friday, July 24, 2026 is lower than the official S&P 500 Index closing price for SPX on the most recent prior trading day.
+
+E.g., ordinarily, a market on Monday would refer to the previous Friday for its most recent closing price, unless that Friday were a market holiday, in which case it would refer to Thursday, or the next most recent trading day.
+
+If the two specified closing prices are exactly equal, this market will resolve 50-50. Note that all figures will be rounded to the nearest cent using standard rounding.
+
+If SPX does not trade at all during the regular session, the market will resolve 50-50.
+
+If either of the relevant days are shortened (for example, due to a market holiday schedule), the official closing price published by S&P 500 Index for that shortened session will still be used for resolution.
+
+If either of the relevant days have no official closing price (for example, due to a trading halt into the market close, system issue, delisting, or other disruption), the market will use the last valid on-exchange trade price of the regular session as the effective closing price.
+
+The resolution source for this market is the Wall Street Journal, specifically the Close values published by the WSJ under "Historical Prices".
+
+US: https://www.wsj.com/market-data/stocks
+EMEA: https://www.wsj.com/market-data/stocks/emea 
+ASIA: https://www.wsj.com/market-data/stocks/asia
+[live-active] slug=spx-up-or-down-on-july-24-2026 event.endDate=2026-07-24T20:00:00Z event.resolutionSource=https://www.wsj.com/market-data/stocks
+[live-active] market.endDate=2026-07-24T20:00:00Z resolutionSource=https://www.wsj.com/market-data/stocks
+[live-active] description:
+This market will resolve to "Up" if the official S&P 500 Index closing price for S&P 500 (SPX) on Friday, July 24, 2026 is higher than the official S&P 500 Index closing price for SPX on the most recent prior trading day.
+
+This market will resolve to "Down" if the official S&P 500 Index closing price for S&P 500 (SPX) on Friday, July 24, 2026 is lower than the official S&P 500 Index closing price for SPX on the most recent prior trading day.
+
+E.g., ordinarily, a market on Monday would refer to the previous Friday for its most recent closing price, unless that Friday were a market holiday, in which case it would refer to Thursday, or the next most recent trading day.
+
+If the two specified closing prices are exactly equal, this market will resolve 50-50. Note that all figures will be rounded to the nearest cent using standard rounding.
+
+If SPX does not trade at all during the regular session, the market will resolve 50-50.
+
+If either of the relevant days are shortened (for example, due to a market holiday schedule), the official closing price published by S&P 500 Index for that shortened session will still be used for resolution.
+
+If either of the relevant days have no official closing price (for example, due to a trading halt into the market close, system issue, delisting, or other disruption), the market will use the last valid on-exchange trade price of the regular session as the effective closing price.
+
+The resolution source for this market is the Wall Street Journal, specifically the Close values published by the WSJ under "Historical Prices".
+
+US: https://www.wsj.com/market-data/stocks
+EMEA: https://www.wsj.com/market-data/stocks/emea 
+ASIA: https://www.wsj.com/market-data/stocks/asia
+[yahoo] {'spot': 7411.35, 'chartPreviousClose': 7408.3, 'previousClose': 7408.3, 'exchange': 'SNP', 'symbol': '^GSPC'}
+
+========================================================================
+DJIA  (yahoo sym ^DJI)  audit date=2026-07-24 (today=2026-07-24)
+========================================================================
+[stored] market_id=3053887 end_date=2026-07-24T20:00:00Z
+[stored] question: Dow Jones (DJIA) Up or Down on July 24?
+[stored] market.endDate: 2026-07-24T20:00:00Z
+[stored] market.resolutionSource: https://www.wsj.com/market-data/stocks
+[stored] market.description:
+This market will resolve to "Up" if the official Dow Jones Industrial Average closing price for Dow Jones (DJIA) on Friday, July 24, 2026 is higher than the official Dow Jones Industrial Average closing price for DJIA on the most recent prior trading day.
+
+This market will resolve to "Down" if the official Dow Jones Industrial Average closing price for Dow Jones (DJIA) on Friday, July 24, 2026 is lower than the official Dow Jones Industrial Average closing price for DJIA on the most recent prior trading day.
+
+E.g., ordinarily, a market on Monday would refer to the previous Friday for its most recent closing price, unless that Friday were a market holiday, in which case it would refer to Thursday, or the next most recent trading day.
+
+If the two specified closing prices are exactly equal, this market will resolve 50-50. Note that all figures will be rounded to the nearest cent using standard rounding.
+
+If DJIA does not trade at all during the regular session, the market will resolve 50-50.
+
+If either of the relevant days are shortened (for example, due to a market holiday schedule), the official closing price published by Dow Jones Industrial Average for that shortened session will still be used for resolution.
+
+If either of the relevant days have no official closing price (for example, due to a trading halt into the market close, system issue, delisting, or other disruption), the market will use the last valid on-exchange trade price of the regular session as the effective closing price.
+
+The resolution source for this market is the Wall Street Journal, specifically the Close values published by the WSJ under "Historical Prices".
+
+US: https://www.wsj.com/market-data/stocks
+EMEA: https://www.wsj.com/market-data/stocks/emea 
+ASIA: https://www.wsj.com/market-data/stocks/asia
+[live-active] slug=djia-up-or-down-on-july-24-2026 event.endDate=2026-07-24T20:00:00Z event.resolutionSource=https://www.wsj.com/market-data/stocks
+[live-active] market.endDate=2026-07-24T20:00:00Z resolutionSource=https://www.wsj.com/market-data/stocks
+[live-active] description:
+This market will resolve to "Up" if the official Dow Jones Industrial Average closing price for Dow Jones (DJIA) on Friday, July 24, 2026 is higher than the official Dow Jones Industrial Average closing price for DJIA on the most recent prior trading day.
+
+This market will resolve to "Down" if the official Dow Jones Industrial Average closing price for Dow Jones (DJIA) on Friday, July 24, 2026 is lower than the official Dow Jones Industrial Average closing price for DJIA on the most recent prior trading day.
+
+E.g., ordinarily, a market on Monday would refer to the previous Friday for its most recent closing price, unless that Friday were a market holiday, in which case it would refer to Thursday, or the next most recent trading day.
+
+If the two specified closing prices are exactly equal, this market will resolve 50-50. Note that all figures will be rounded to the nearest cent using standard rounding.
+
+If DJIA does not trade at all during the regular session, the market will resolve 50-50.
+
+If either of the relevant days are shortened (for example, due to a market holiday schedule), the official closing price published by Dow Jones Industrial Average for that shortened session will still be used for resolution.
+
+If either of the relevant days have no official closing price (for example, due to a trading halt into the market close, system issue, delisting, or other disruption), the market will use the last valid on-exchange trade price of the regular session as the effective closing price.
+
+The resolution source for this market is the Wall Street Journal, specifically the Close values published by the WSJ under "Historical Prices".
+
+US: https://www.wsj.com/market-data/stocks
+EMEA: https://www.wsj.com/market-data/stocks/emea 
+ASIA: https://www.wsj.com/market-data/stocks/asia
+[yahoo] {'spot': 51889.9, 'chartPreviousClose': 51711.65, 'previousClose': 51711.65, 'exchange': 'DJI', 'symbol': '^DJI'}
+
+========================================================================
+NVDA  (yahoo sym NVDA)  audit date=2026-07-24 (today=2026-07-24)
+========================================================================
+[stored] market_id=3053927 end_date=2026-07-24T20:00:00Z
+[stored] question: NVIDIA (NVDA) Up or Down on July 24?
+[stored] market.endDate: 2026-07-24T20:00:00Z
+[stored] market.resolutionSource: https://pythdata.app/explore/Equity.US.NVDA%2FUSD
+[stored] market.description:
+This market will resolve to "Up" if the Close price for NVIDIA (NVDA) on July 24, 2026 is higher than the Close price for NVIDIA (NVDA) on the most recent prior trading day.
+
+This market will resolve to "Down" if the Close price for NVIDIA (NVDA) on July 24, 2026 is lower than the Close price for NVIDIA (NVDA) on the most recent prior trading day.
+
+E.g., ordinarily, a market on Monday would refer to the previous Friday for its most recent closing price, unless that Friday were a market holiday, in which case it would refer to Thursday, or the next most recent trading day.
+
+If the two specified closing prices are exactly equal, this market will resolve 50-50. Closing prices will be used exactly as published by Pyth, without rounding.
+
+If NVIDIA (NVDA) does not trade at all during the regular session, the market will resolve 50-50.
+
+For a standard full trading session, the closing price refers to the Pyth "Close" value of the 1-minute candle corresponding to the final minute of regular trading hours on the primary exchange.
+
+If either of the relevant days has no valid Pyth Close value for the 1-minute candle corresponding to the end of regular trading hours on the primary exchange, the market will use the last valid Pyth price achieved during the regular trading hours of the primary exchange as the effective closing price. If no valid Pyth price exists for that trading day due to a system outage, data failure, or other technical disruption, the official closing price published by the primary exchange on which the listed security trades will be used to determine the closing price for that day.
+
+Only prices achieved during the regular trading hours of the primary exchange on which the listed security trades (typically 9:30 AM – 4:00 PM ET) will be considered.
+
+In the event of a stock split, reverse stock split, or similar corporate action affecting the listed security during the listed time frame, this market will resolve based on split-adjusted prices as displayed on Pyth.
+
+The resolution source for this market will be Pyth, specifically the "Close" values for the relevant 1-minute candle available at https://pythdata.app/explore/Equity.US.NVDA%2FUSD. Historical 1-minute candles may be accessed by appending a Unix timestamp (seconds) to the Pyth chart URL using the "t=" parameter. Any timestamp within the listed market time frame may be used to view the relevant candle data (e.g., https://pythdata.app/explore/Equity.US.NVDA%2FUSD?t=1773432000).
+[live-active] slug=nvda-up-or-down-on-july-24-2026 event.endDate=2026-07-24T20:00:00Z event.resolutionSource=https://pythdata.app/explore/Equity.US.NVDA%2FUSD
+[live-active] market.endDate=2026-07-24T20:00:00Z resolutionSource=https://pythdata.app/explore/Equity.US.NVDA%2FUSD
+[live-active] description:
+This market will resolve to "Up" if the Close price for NVIDIA (NVDA) on July 24, 2026 is higher than the Close price for NVIDIA (NVDA) on the most recent prior trading day.
+
+This market will resolve to "Down" if the Close price for NVIDIA (NVDA) on July 24, 2026 is lower than the Close price for NVIDIA (NVDA) on the most recent prior trading day.
+
+E.g., ordinarily, a market on Monday would refer to the previous Friday for its most recent closing price, unless that Friday were a market holiday, in which case it would refer to Thursday, or the next most recent trading day.
+
+If the two specified closing prices are exactly equal, this market will resolve 50-50. Closing prices will be used exactly as published by Pyth, without rounding.
+
+If NVIDIA (NVDA) does not trade at all during the regular session, the market will resolve 50-50.
+
+For a standard full trading session, the closing price refers to the Pyth "Close" value of the 1-minute candle corresponding to the final minute of regular trading hours on the primary exchange.
+
+If either of the relevant days has no valid Pyth Close value for the 1-minute candle corresponding to the end of regular trading hours on the primary exchange, the market will use the last valid Pyth price achieved during the regular trading hours of the primary exchange as the effective closing price. If no valid Pyth price exists for that trading day due to a system outage, data failure, or other technical disruption, the official closing price published by the primary exchange on which the listed security trades will be used to determine the closing price for that day.
+
+Only prices achieved during the regular trading hours of the primary exchange on which the listed security trades (typically 9:30 AM – 4:00 PM ET) will be considered.
+
+In the event of a stock split, reverse stock split, or similar corporate action affecting the listed security during the listed time frame, this market will resolve based on split-adjusted prices as displayed on Pyth.
+
+The resolution source for this market will be Pyth, specifically the "Close" values for the relevant 1-minute candle available at https://pythdata.app/explore/Equity.US.NVDA%2FUSD. Historical 1-minute candles may be accessed by appending a Unix timestamp (seconds) to the Pyth chart URL using the "t=" parameter. Any timestamp within the listed market time frame may be used to view the relevant candle data (e.g., https://pythdata.app/explore/Equity.US.NVDA%2FUSD?t=1773432000).
+[yahoo] {'spot': 207.455, 'chartPreviousClose': 208.76, 'previousClose': 208.76, 'exchange': 'NMS', 'symbol': 'NVDA'}
+
+========================================================================
+TSLA  (yahoo sym TSLA)  audit date=2026-07-24 (today=2026-07-24)
+========================================================================
+[stored] market_id=3053920 end_date=2026-07-24T20:00:00Z
+[stored] question: Tesla (TSLA) Up or Down on July 24?
+[stored] market.endDate: 2026-07-24T20:00:00Z
+[stored] market.resolutionSource: https://pythdata.app/explore/Equity.US.TSLA%2FUSD
+[stored] market.description:
+This market will resolve to "Up" if the Close price for Tesla, Inc. (TSLA) on July 24, 2026 is higher than the Close price for Tesla, Inc. (TSLA) on the most recent prior trading day.
+
+This market will resolve to "Down" if the Close price for Tesla, Inc. (TSLA) on July 24, 2026 is lower than the Close price for Tesla, Inc. (TSLA) on the most recent prior trading day.
+
+E.g., ordinarily, a market on Monday would refer to the previous Friday for its most recent closing price, unless that Friday were a market holiday, in which case it would refer to Thursday, or the next most recent trading day.
+
+If the two specified closing prices are exactly equal, this market will resolve 50-50. Closing prices will be used exactly as published by Pyth, without rounding.
+
+If Tesla, Inc. (TSLA) does not trade at all during the regular session, the market will resolve 50-50.
+
+For a standard full trading session, the closing price refers to the Pyth "Close" value of the 1-minute candle corresponding to the final minute of regular trading hours on the primary exchange.
+
+If either of the relevant days has no valid Pyth Close value for the 1-minute candle corresponding to the end of regular trading hours on the primary exchange, the market will use the last valid Pyth price achieved during the regular trading hours of the primary exchange as the effective closing price. If no valid Pyth price exists for that trading day due to a system outage, data failure, or other technical disruption, the official closing price published by the primary exchange on which the listed security trades will be used to determine the closing price for that day.
+
+Only prices achieved during the regular trading hours of the primary exchange on which the listed security trades (typically 9:30 AM – 4:00 PM ET) will be considered.
+
+In the event of a stock split, reverse stock split, or similar corporate action affecting the listed security during the listed time frame, this market will resolve based on split-adjusted prices as displayed on Pyth.
+
+The resolution source for this market will be Pyth, specifically the "Close" values for the relevant 1-minute candle available at https://pythdata.app/explore/Equity.US.TSLA%2FUSD. Historical 1-minute candles may be accessed by appending a Unix timestamp (seconds) to the Pyth chart URL using the "t=" parameter. Any timestamp within the listed market time frame may be used to view the relevant candle data (e.g., https://pythdata.app/explore/Equity.US.TSLA%2FUSD?t=1773432000).
+[live-active] slug=tsla-up-or-down-on-july-24-2026 event.endDate=2026-07-24T20:00:00Z event.resolutionSource=https://pythdata.app/explore/Equity.US.TSLA%2FUSD
+[live-active] market.endDate=2026-07-24T20:00:00Z resolutionSource=https://pythdata.app/explore/Equity.US.TSLA%2FUSD
+[live-active] description:
+This market will resolve to "Up" if the Close price for Tesla, Inc. (TSLA) on July 24, 2026 is higher than the Close price for Tesla, Inc. (TSLA) on the most recent prior trading day.
+
+This market will resolve to "Down" if the Close price for Tesla, Inc. (TSLA) on July 24, 2026 is lower than the Close price for Tesla, Inc. (TSLA) on the most recent prior trading day.
+
+E.g., ordinarily, a market on Monday would refer to the previous Friday for its most recent closing price, unless that Friday were a market holiday, in which case it would refer to Thursday, or the next most recent trading day.
+
+If the two specified closing prices are exactly equal, this market will resolve 50-50. Closing prices will be used exactly as published by Pyth, without rounding.
+
+If Tesla, Inc. (TSLA) does not trade at all during the regular session, the market will resolve 50-50.
+
+For a standard full trading session, the closing price refers to the Pyth "Close" value of the 1-minute candle corresponding to the final minute of regular trading hours on the primary exchange.
+
+If either of the relevant days has no valid Pyth Close value for the 1-minute candle corresponding to the end of regular trading hours on the primary exchange, the market will use the last valid Pyth price achieved during the regular trading hours of the primary exchange as the effective closing price. If no valid Pyth price exists for that trading day due to a system outage, data failure, or other technical disruption, the official closing price published by the primary exchange on which the listed security trades will be used to determine the closing price for that day.
+
+Only prices achieved during the regular trading hours of the primary exchange on which the listed security trades (typically 9:30 AM – 4:00 PM ET) will be considered.
+
+In the event of a stock split, reverse stock split, or similar corporate action affecting the listed security during the listed time frame, this market will resolve based on split-adjusted prices as displayed on Pyth.
+
+The resolution source for this market will be Pyth, specifically the "Close" values for the relevant 1-minute candle available at https://pythdata.app/explore/Equity.US.TSLA%2FUSD. Historical 1-minute candles may be accessed by appending a Unix timestamp (seconds) to the Pyth chart URL using the "t=" parameter. Any timestamp within the listed market time frame may be used to view the relevant candle data (e.g., https://pythdata.app/explore/Equity.US.TSLA%2FUSD?t=1773432000).
+[yahoo] {'spot': 307.47, 'chartPreviousClose': 319.69, 'previousClose': 319.69, 'exchange': 'NMS', 'symbol': 'TSLA'}
+
+=== FALSIFICATION CHECKLIST (judge from text above) ===
+(a) resolves on official regular-session CLOSE (16:00 ET = 20:00 UTC summer / 21:00 UTC winter)?
+(b) which exchange/index provider? (SPY=NYSE Arca, SPX=Cboe, DJIA=S&P DJI, NVDA/TSLA=Nasdaq)
+(c) close-vs-PREVIOUS-TRADING-DAY-close (not open/vwap/intraday/after-hours)?
+(d) Yahoo chartPreviousClose == market's stated prior close (date + split-adjust)?
+(e) market.endDate == 16:00 ET close (20:00 UTC in EDT) NOT midnight UTC?
+DOA if resolution source != Yahoo spot source AND not one-line-fixable.

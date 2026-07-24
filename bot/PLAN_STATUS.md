@@ -36,3 +36,36 @@ Verification held (ERA5 coef positive => pipeline correct, not a frame artifact)
 - Once all open paper+live resolve: disable maintain/settle crons too, then archive/compress the 7.5GB paper-A DB (quiescent).
 - Key rotation (signer 0x8c9d exposed to AI context 2026-07-24) still deferred — re-raise once arm flat + funds withdrawn.
 - Reallocation: run same 2-step audit (oracle via fetch_resolution + fill realism walk-book) + T1.1-equivalent pre-registered gate before sizing flb/arb/usud edges.
+
+## REMAINING-EDGES VERIFICATION (Fable-5 plan, executed 2026-07-25 by glm-5.2)
+Plan: Remaining Edges Audit + Fable5 Prompt 2026-07-25.md (vault). Q1/Q2 fixed by Fable-5; Q3-Q6 + phased plan synthesized via 4-lens adversarial workflow. Executed P0,P1,P2.1,P2.4,P2.5,P3 tonight. P4/P6 deferred (survivors only, supervised).
+
+P0 — CROSSVENUE KILLED (Q1): edges/crossvenue.py docstring marked KILLED (Kalshi US-persons-only, untradeable from HK; gap info has no action). Scan-only, not crond. Kept for reference.
+
+## REMAINING-EDGES VERIFICATION (Fable-5 plan, executed 2026-07-25 by glm-5.2)
+Plan: Remaining Edges Audit + Fable5 Prompt 2026-07-25.md (vault). Q1/Q2 fixed by Fable-5; Q3-Q6 + phased plan synthesized via 4-lens adversarial workflow. Executed P0,P1,P2.1,P2.4,P2.5,P3 tonight. P4/P6 deferred (survivors only, supervised).
+
+P0 — CROSSVENUE KILLED (Q1): edges/crossvenue.py docstring marked KILLED (Kalshi US-persons-only, untradeable from HK; gap info has no action). Scan-only, not cron'd. Kept for reference.
+
+P1 — FLB kill-now gate: DECISIVE PASS.
+- Free NO-GO (build_flb_calib._report): longshot [0.00-0.05] freq=0.005 vs midpt 0.025, favourite [0.95-1.00] freq=0.996 vs 0.975 -> FLB present on modern Polymarket, NOT dead-by-construction.
+- OOS gate (bot/flb_oos_gate.py): md5(market_id)%5 80/20 split (train 198099 / test 49268; scored 37651 24h+7d points, final snapshot TAUTOLOGY-EXCLUDED, 25553 clusters).
+  GATE-1 INFO: OOS log-loss improvement calib vs raw = 0.003723, 95% CI [0.002195, 0.005257] > 0 -> calib ADDS info beyond price. Isotonic control 0.002115 (calib beats generic recalibration ~76%) -> FLB-specific.
+  GATE-2 PnL-after-costs (both sides, |gap|>COST=0.03): calib n=19418 mean +$0.0219 CI [+$0.0145, +$0.0295] > 0 (edge exceeds 3% costs); isotonic +$0.0204; calib wins; raw_price 0 trades (sanity).
+  VERDICT (bot/FLB_GATE_VERDICT.txt): FLB SURVIVES the T1.1-equivalent gate that killed weather. Real but THIN (~2.2%/trade after costs). Next: P4 realistic-fill + P6 fresh-OOS n>=200 before live un-HALT.
+
+P2.1 — USUD oracle audit: NOT DOA (bot/data/usud_resolution_audit.txt).
+- SPY/NVDA/TSLA resolve on Pyth 4pm-ET regular-session close (1-min candle, primary exchange; Pyth falls back to exchange close on its failure); SPX/DJIA on WSJ official index close. All close-vs-prior-trading-day-close. end_date=20:00 UTC=16:00 EDT (NOT midnight; _tau_to_close correct as-is — plan 21:00 UTC assumed winter EST, corrected).
+- Yahoo chartPreviousClose=prior-trading-day close=strike; Yahoo exchange matches primary (SPY=PCX/NYSE Arca, NVDA/TSLA=NMS/Nasdaq, SPX=SNP, DJIA=DJI). Same price stream as resolution -> NOT the weather bug (ERA5-vs-METAR was different systems; here Pyth/WSJ close == Yahoo close). Intraday spot is the model INPUT, close is the PREDICTION -> correct forward-digital setup. Correctable calibration bias, not fatal.
+- N(d2)+realized-vol form correct; only the vol estimator (1d 5-min, noisy/stale at 19:00 UTC scan) is weak -> correctable, gated behind T1.1.
+
+P2.4 — usud.py hardening: prob_above returns 0.5 (not 0.0/1.0) when sigma<=0/tau<=0 (latent fake-edge guard; unreachable from _price existing guard but defensive). No tau pin (end_date correct).
+
+P2.5 — bot/usud_t11.py: outcome ~ logit(entry_price)+logit(p_model), cluster by trading_date=DATE(end_date America/New_York). Self-check PASS (synthetic 200-row fit coef 1.65 p=0.000). n=9 sanity: INCONCLUSIVE (3 clusters, degenerate; coef sign +207 positive but meaningless at n=9). assert N>=200 / n_clusters>=60 (sub-threshold = early-kill-only, PASS does NOT unblock). Accrues via job_usud cron (now un-halted for paper).
+
+P3 — ARB existence-proof: edges/arb.py compute_bundle now returns best bundle (any net_gap incl negatives) not None; scan_arb logs every bundle to arb_gap_log (new table, self-contained CREATE) + trade-filter moved to scan_arb (behavior-preserving). bundle_id=event_id|side in leg meta (job_arb uses it; analyze_edges already groups by meta "bundle"). Self-check PASS (near-miss net=0.01 logs qualifies=0; qualifying net=0.10 logs qualifies=1). bot/analyze_arb_gap.py prints the distribution. _has_depth walked-fill_size fix DEFERRED. A0 historical gap distribution DEFERRED (optional). Accrues via job_arb cron (4wk/>=500 scans).
+
+CRITICAL FIX: paper edge crons (job_flb/job_arb/job_usud) were HALTed by HALT_LIVE (collateral — they checked HALT_FILE), freezing ALL paper accrual since 2026-07-24 15:26. Decoupled: removed HALT check from paper jobs (run_scan.py); live arm STILL halts via run_live.py independent HALT_LIVE check. Paper accrual (USUD clusters, ARB scans, FLB fresh-OOS) now resumes.
+
+DEFERRED (supervised): P4 fill-realism floor (engine._walk_book -> (avg,filled_shares); edge_engine._store_fill re-walk+taker fee+partial-cap; backtest_usud apply SPREAD/TAKER_FEE) — only for survivors (FLB, USUD-if-T1.1-passes), big shared change. P6 full pre-registered OOS gate + live un-HALT.
+Live arm STAYS HALTED (HALT_LIVE). No real money until an edge passes its full gate OOS AND fill-realism survives.

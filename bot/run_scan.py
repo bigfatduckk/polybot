@@ -98,9 +98,6 @@ def job_settle():
 
 
 def job_flb():
-    if os.path.exists(_halt_path()):
-        engine.notify("[HALT] flb scan skipped")
-        return
     markets.init_edge_db()
     scan_id = edge_engine.new_scan_id("flb")
     cands = flb.scan_flb(scan_id)
@@ -118,9 +115,6 @@ def job_flb():
 
 
 def job_arb():
-    if os.path.exists(_halt_path()):
-        engine.notify("[HALT] arb scan skipped")
-        return
     markets.init_edge_db()
     scan_id = edge_engine.new_scan_id("arb")
     bundles = arb.scan_arb(scan_id)
@@ -134,7 +128,8 @@ def job_arb():
                 edge="arb", market_id=leg["market_id"], token_id=leg["token_id"],
                 side=b["side"], price=leg["price"], size=leg["shares"],
                 maker_or_taker="taker", edge_size=b["net_gap"], kelly_fraction=0.0,
-                meta={"scan_id": scan_id, "bundle": b["event_id"], "n_outcomes": b["n_outcomes"]},
+                meta={"scan_id": scan_id, "bundle": b.get("bundle_id", b["event_id"]),
+                      "n_outcomes": b["n_outcomes"]},
             ))
         ok = True
         for o in leg_orders:
@@ -168,9 +163,6 @@ def job_crossvenue():
 
 
 def job_usud():
-    if os.path.exists(_halt_path()):
-        engine.notify("[HALT] usud scan skipped")
-        return
     markets.init_edge_db()
     scan_id = edge_engine.new_scan_id("usud")
     cands = usud.scan_usud(scan_id)
