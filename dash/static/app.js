@@ -7,15 +7,42 @@ function fmtPnl(v){ if(v==null) return '—'; return (v>=0?'+':'')+v.toFixed(2);
 function ageLabel(s){ if(s==null) return 'Tick —'; return Math.round(s/60)+'m ago'; }
 function setDot(id, kind){ const el=document.getElementById(id); if(el) el.className='dot '+kind; }
 
+// HKT = UTC+8. All displayed times are Hong Kong time.
+function toHKT(iso, withDate){
+  if(!iso) return '—';
+  let d = new Date(iso);
+  if(isNaN(d)) return iso;
+  d = new Date(d.getTime()+8*3600*1000);
+  const hh = String(d.getUTCHours()).padStart(2,'0');
+  const mm = String(d.getUTCMinutes()).padStart(2,'0');
+  const ss = String(d.getUTCSeconds()).padStart(2,'0');
+  if(withDate){
+    const mo = String(d.getUTCMonth()+1).padStart(2,'0');
+    const dd = String(d.getUTCDate()).padStart(2,'0');
+    return `${mo}-${dd} ${hh}:${mm}`;
+  }
+  return `${hh}:${mm}:${ss}`;
+}
+// ISO date "2026-07-24" -> "07-24" for compact HKT-day axis labels.
+function md(day){ if(!day) return ''; return day.slice(5); }
+
 function renderHealth(h){
   for(const [name,i] of Object.entries(h.instances)){
     const dotKind = (i.halted || i.status === 'unreachable') ? 'crit' : (name==='LIVE' && i.last_tick_age!=null && i.last_tick_age>300 ? 'warn' : 'ok');
     setDot('dot-'+name, dotKind);
   }
   const live = h.instances.LIVE || {};
-  document.getElementById('stat-pnl').textContent = 'PnL '+(live.bankroll!=null?fmtPnl(live.bankroll-200):'—');
-  document.getElementById('stat-bankroll').textContent = 'Bankroll '+(live.bankroll!=null?live.bankroll.toFixed(0):'—');
-  document.getElementById('stat-gas').textContent = 'Gas '+(live.gas!=null?live.gas.toFixed(1):'—');
+  const pnlEl = document.getElementById('stat-pnl');
+  const pnl = live.realized_pnl;
+  if(pnl!=null){
+    pnlEl.textContent = 'PnL '+fmtPnl(pnl)+(live.settled?` (${live.settled})`:'');
+    pnlEl.className = 'stat '+(pnl>=0?'pos-pnl-pos':'pos-pnl-neg');
+  } else {
+    pnlEl.textContent = 'PnL —';
+    pnlEl.className = 'stat';
+  }
+  document.getElementById('stat-bankroll').textContent = 'Cash '+(live.bankroll!=null?'$'+Number(live.bankroll).toFixed(2):'—');
+  document.getElementById('stat-gas').textContent = 'Gas '+(live.gas!=null?Number(live.gas).toFixed(1):'—')+' POL';
   document.getElementById('stat-age').textContent = ageLabel(live.last_tick_age);
 }
 
@@ -24,15 +51,21 @@ function renderFeed(feed){
   el.innerHTML = feed.rows.map(r=>{
     const tag=(r.note||'').split(':')[0] || r.action;
     const cls = (r.note||'').startsWith('skip')?'tag-skip':(r.note==='posted'?'tag-posted':(r.note==='rej'?'tag-rej':'tag-FILLED'));
-    return `<div class="row"><span>${(r.ts||'').slice(11,19)}</span><span>${r.instance}</span><span>${r.action}</span><span class="tag ${cls}">${tag}</span></div>`;
+    return `<div class="row"><span>${toHKT(r.ts)}</span><span>${r.instance}</span><span>${r.action}</span><span class="tag ${cls}">${tag}</span></div>`;
   }).join('');
 }
 
 function renderPositions(p){
   const el=document.getElementById('positions-table'); if(!p||!p.rows) return;
   const rows=p.rows;
-  el.innerHTML = `<table><thead><tr><th>Inst</th><th>Market</th><th>Side</th><th>Px</th><th>Size</th><th>Status</th></tr></thead><tbody>${
-    rows.map(r=>`<tr><td>${r.instance}</td><td>${r.market_id||''}</td><td>${r.side||''}</td><td>${r.price!=null?r.price.toFixed(3):'—'}</td><td>${r.size!=null?r.size.toFixed(0):'—'}</td><td>${r.status||''}</td></tr>`).join('')
+  const sideCell=(s)=>{
+    if(!s) return '—';
+    const up = String(s).toUpperCase();
+    const cls = up==='YES'?'pos-yes':(up==='NO'?'pos-no':'');
+    return `<span class="${cls}">${s}</span>`;
+  };
+  el.innerHTML = `<table><thead><tr><th>Inst</th><th>Trade</th><th>Side</th><th>Date</th><th>Px</th><th>Size</th><th>Status</th></tr></thead><tbody>${
+    rows.map(r=>`<tr><td>${r.instance}</td><td class="desc">${r.desc||r.market_id||''}</td><td>${sideCell(r.side)}</td><td>${r.date||'—'}</td><td>${r.price!=null?r.price.toFixed(3):'—'}</td><td>${r.size!=null?r.size.toFixed(0):'—'}</td><td>${r.status||''}</td></tr>`).join('')
   }</tbody></table>`;
 }
 
@@ -117,19 +150,81 @@ async function pollState(){
   }
 }
 
+// Shared options: fixed-height box (maintainAspectRatio:false) + index hover so
+// the whole column highlights and the tooltip shows every series at that point.
+function baseOpts(extra){
+  const o = {
+    animation:false,
+    responsive:true,
+    maintainAspectRatio:false,
+    interaction:{intersect:false, mode:'index'},
+    plugins:{
+      legend:{labels:{color:'#7d8794',font:{size:10}}, onClick:Chart.defaults.plugins.legend.onClick},
+      tooltip:{backgroundColor:'#0b1117',titleColor:'#e6edf3',bodyColor:'#7d8794',
+               borderColor:'#222b3a',borderWidth:1,padding:8}
+    },
+    scales:{
+      x:{ticks:{color:'#525c6b',font:{size:9},maxRotation:0,autoSkip:true},grid:{color:'#222b3a'}},
+      y:{ticks:{color:'#525c6b',font:{size:9}},grid:{color:'#222b3a'}}
+    }
+  };
+  return Object.assign({}, o, extra||{});
+}
+
 function lineChart(id, datasets, labels){
   const ctx=document.getElementById(id); if(!ctx) return;
   if(charts[id]) charts[id].destroy();
   charts[id]=new Chart(ctx,{type:'line',data:{labels,datasets},
-    options:{animation:false,plugins:{legend:{labels:{color:'#7d8794',font:{size:10}}}},
-      scales:{x:{ticks:{color:'#525c6b',font:{size:9}},grid:{color:'#222b3a'}},
-              y:{ticks:{color:'#525c6b',font:{size:9}},grid:{color:'#222b3a'}}}}});
+    options:baseOpts()});
 }
+
+// Draw the value above each bar so win rate / pnl bars are readable even when tiny.
+const barValuePlugin = {
+  id:'barValue',
+  afterDatasetsDraw(chart){
+    const {ctx} = chart;
+    chart.data.datasets.forEach((ds,di)=>{
+      const meta = chart.getDatasetMeta(di);
+      for(const bar of meta.data){
+        const v = ds.data[bar.index];
+        if(v==null) continue;
+        ctx.save();
+        ctx.fillStyle = '#7d8794';
+        ctx.font = '10px "SFMono-Regular",Consolas,monospace';
+        ctx.textAlign='center';
+        const lbl = ds.labelFmt ? ds.labelFmt(v, bar.index) : String(v);
+        ctx.fillText(lbl, bar.x, bar.y - 4);
+        ctx.restore();
+      }
+    });
+  }
+};
 
 function barChart(id, config){
   const ctx=document.getElementById(id); if(!ctx) return;
   if(charts[id]) charts[id].destroy();
-  charts[id]=new Chart(ctx, config);
+  const cfg = Object.assign({}, config, {options:baseOpts(config.options||{})});
+  // keep per-dataset labelFmt for the value plugin
+  cfg.plugins = (cfg.plugins||[]).concat(barValuePlugin);
+  charts[id]=new Chart(ctx, cfg);
+}
+
+// Build a unified day axis (sorted union of all instances' days) and align each
+// series to it with null where the instance has no point — fixes the bug where
+// B/LIVE were plotted at A's first-day label by index.
+function unifiedAxis(series, key, carryForward){
+  const days = [...new Set([].concat(...Object.values(series).map(pts=>(pts||[]).map(p=>p.day))))].sort();
+  const datasets = Object.entries(series).map(([n,pts])=>{
+    const by = {}; (pts||[]).forEach(p=>by[p.day]=p[key]);
+    let last = null;
+    const data = days.map(d=>{
+      if(d in by){ last = by[d]; return by[d]; }
+      return carryForward ? last : null;
+    });
+    return {label:n, data, borderColor:INST_COLOR[n]||'#888',
+            borderWidth:1.5, pointRadius:0, spanGaps:true, tension:0.1};
+  });
+  return {labels: days.map(md), datasets};
 }
 
 async function pollCharts(){
@@ -140,43 +235,48 @@ async function pollCharts(){
     getJSON('/api/calib'),getJSON('/api/station-bias?days=30'),
     getJSON('/api/candidates?limit=50')]);
   if(eq && eq.error) markErr('card-equity','chart-equity');
-  else if(eq){ clearErr('card-equity'); lineChart('chart-equity',
-    Object.entries(eq.series).map(([n,pts])=>({label:n,data:pts.map(p=>p.cum),borderColor:INST_COLOR[n],borderWidth:1.5,pointRadius:0})),
-    (eq.series.A||eq.series.B||[]).map(p=>p.day)); }
+  else if(eq){ clearErr('card-equity');
+    const a = unifiedAxis(eq.series,'cum',true);
+    lineChart('chart-equity', a.datasets, a.labels); }
   if(dp && dp.error) markErr('card-daily-pnl','chart-daily-pnl');
-  else if(dp){ clearErr('card-daily-pnl'); lineChart('chart-daily-pnl',
-    Object.entries(dp.series).map(([n,pts])=>({label:n,data:pts.map(p=>p.pnl),borderColor:INST_COLOR[n],borderWidth:1.5,pointRadius:0})),
-    (dp.series.A||[]).map(p=>p.day)); }
+  else if(dp){ clearErr('card-daily-pnl');
+    const a = unifiedAxis(dp.series,'pnl',false);
+    lineChart('chart-daily-pnl', a.datasets, a.labels); }
   if(ep && ep.error) markErr('card-edge-pnl','chart-edge-pnl');
   else if(ep){ clearErr('card-edge-pnl'); const labels=ep.edges.map(e=>e.edge);
     barChart('chart-edge-pnl',
-      {type:'bar',data:{labels,datasets:[{data:ep.edges.map(e=>e.pnl),backgroundColor:ep.edges.map(e=>e.pnl>=0?'#3fb950':'#f85149')}]},
+      {type:'bar',data:{labels,datasets:[{data:ep.edges.map(e=>e.pnl),
+        backgroundColor:ep.edges.map(e=>e.pnl>=0?'#3fb950':'#f85149'),
+        labelFmt:v=>fmtPnl(v)}]},
        options:{plugins:{legend:{display:false}}}}); }
   if(wr && wr.error) markErr('card-winrate','chart-winrate');
   else if(wr){ clearErr('card-winrate'); const labels=wr.edges.map(e=>e.edge);
     barChart('chart-winrate',{type:'bar',
-      data:{labels,datasets:[{data:wr.edges.map(e=>e.rate!=null?e.rate*100:0),backgroundColor:'#8b5cf6'}]},
-      options:{plugins:{legend:{display:false}},scales:{y:{max:100}}}}); }
+      data:{labels,datasets:[{data:wr.edges.map(e=>e.rate!=null?e.rate*100:null),
+        backgroundColor:'#8b5cf6',
+        labelFmt:(v,i)=>{ const e=wr.edges[i]; return e&&e.total?Math.round(v)+'% ('+e.won+'/'+e.total+')':Math.round(v)+'%'; }}]},
+      options:{plugins:{legend:{display:false}},scales:{y:{min:0,max:100,ticks:{stepSize:10,callback:v=>v+'%'}}}}}); }
   if(rj && rj.error) markErr('card-rejections','chart-rejections');
   else if(rj){ clearErr('card-rejections'); const labels=rj.rows.map(r=>r.reason);
     barChart('chart-rejections',{type:'bar',
-      data:{labels,datasets:[{data:rj.rows.map(r=>r.count),backgroundColor:'#d29922'}]},
+      data:{labels,datasets:[{data:rj.rows.map(r=>r.count),backgroundColor:'#d29922',labelFmt:v=>v}]},
       options:{plugins:{legend:{display:false}},indexAxis:'y'}}); }
   if(ed && ed.error) markErr('card-edge-dist','chart-edge-dist');
   else if(ed){ clearErr('card-edge-dist'); barChart('chart-edge-dist',{type:'bar',
-      data:{labels:ed.buckets.map(b=>b.bucket),datasets:[{data:ed.buckets.map(b=>b.count),backgroundColor:'#58a6ff'}]},
+      data:{labels:ed.buckets.map(b=>b.bucket),datasets:[{data:ed.buckets.map(b=>b.count),backgroundColor:'#58a6ff',labelFmt:v=>v}]},
       options:{plugins:{legend:{display:false}}}}); }
   if(cal && cal.error) markErr('card-calib','chart-calib');
   else if(cal&&cal.series){ clearErr('card-calib'); const by={};
     cal.series.forEach(r=>{(by[r.edge]=by[r.edge]||[]).push(r)});
+    const labels=[...new Set(cal.series.map(p=>p.ts))].map(t=>toHKT(t,true));
     lineChart('chart-calib',Object.entries(by).map(([e,pts])=>({label:e+'_model',data:pts.map(p=>p.brier_model),borderColor:'#58a6ff',pointRadius:0})
       ).concat(Object.entries(by).map(([e,pts])=>({label:e+'_mkt',data:pts.map(p=>p.brier_market),borderColor:'#f85149',pointRadius:0}))),
-      [...new Set(cal.series.map(p=>p.ts))]);
+      labels);
   }
   if(sb && sb.error) markErr('card-station-bias','chart-station-bias');
   else if(sb&&sb.cities){ clearErr('card-station-bias'); lineChart('chart-station-bias',
       sb.cities.map(c=>({label:c.city,data:c.points.map(p=>p.residual),borderColor:INST_COLOR.A,pointRadius:0,borderWidth:1})),
-      (sb.cities[0]?.points||[]).map(p=>p.ts)); }
+      (sb.cities[0]?.points||[]).map(p=>toHKT(p.ts,true))); }
   if(cd && cd.error) markErr('card-candidates','candidates-table');
   else if(cd){ clearErr('card-candidates'); renderCandidates(cd); }
 }

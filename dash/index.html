@@ -27,18 +27,18 @@
   </header>
 
   <main class="grid">
-    <section class="card span8 order-equity" id="card-equity"><h2>Equity Curve</h2><canvas id="chart-equity"></canvas></section>
-    <section class="card span4 order-edgepnl" id="card-edge-pnl"><h2>Per-Edge PnL</h2><canvas id="chart-edge-pnl"></canvas></section>
-    <section class="card span4 order-daily" id="card-daily-pnl"><h2>Daily PnL</h2><canvas id="chart-daily-pnl"></canvas></section>
+    <section class="card span8 order-equity" id="card-equity"><h2>Equity Curve (HKT)</h2><div class="chart-box"><canvas id="chart-equity"></canvas></div></section>
+    <section class="card span4 order-edgepnl" id="card-edge-pnl"><h2>Per-Edge PnL</h2><div class="chart-box"><canvas id="chart-edge-pnl"></canvas></div></section>
+    <section class="card span4 order-daily" id="card-daily-pnl"><h2>Daily PnL (HKT)</h2><div class="chart-box"><canvas id="chart-daily-pnl"></canvas></div></section>
     <section class="card span4 order-risk" id="card-risk"><h2>Risk Gauges</h2><div class="gauges" id="risk-gauges"></div></section>
-    <section class="card span4 order-winrate" id="card-winrate"><h2>Win Rate</h2><canvas id="chart-winrate"></canvas></section>
-    <section class="card span7 order-feed" id="card-feed"><h2>Live Trade Feed</h2><div class="feed" id="feed-list"></div></section>
+    <section class="card span4 order-winrate" id="card-winrate"><h2>Win Rate</h2><div class="chart-box"><canvas id="chart-winrate"></canvas></div></section>
+    <section class="card span7 order-feed" id="card-feed"><h2>Live Trade Feed (HKT)</h2><div class="feed" id="feed-list"></div></section>
     <section class="card span5 order-positions" id="card-positions"><h2>Open Positions</h2><div class="table-wrap" id="positions-table"></div></section>
-    <section class="card span4 order-rejections" id="card-rejections"><h2>Rejections (24h)</h2><canvas id="chart-rejections"></canvas></section>
+    <section class="card span4 order-rejections" id="card-rejections"><h2>Rejections (24h)</h2><div class="chart-box"><canvas id="chart-rejections"></canvas></div></section>
     <section class="card span4 order-candidates" id="card-candidates"><h2>Candidate Pipeline</h2><div class="table-wrap" id="candidates-table"></div></section>
-    <section class="card span4 order-edgedist" id="card-edge-dist"><h2>Edge Distribution</h2><canvas id="chart-edge-dist"></canvas></section>
-    <section class="card span6 order-stationbias" id="card-station-bias"><h2>Station Bias Drift</h2><canvas id="chart-station-bias"></canvas></section>
-    <section class="card span6 order-calib" id="card-calib"><h2>Calibration — Brier over time</h2><canvas id="chart-calib"></canvas></section>
+    <section class="card span4 order-edgedist" id="card-edge-dist"><h2>Edge Distribution</h2><div class="chart-box"><canvas id="chart-edge-dist"></canvas></div></section>
+    <section class="card span6 order-stationbias" id="card-station-bias"><h2>Station Bias Drift (HKT)</h2><div class="chart-box"><canvas id="chart-station-bias"></canvas></div></section>
+    <section class="card span6 order-calib" id="card-calib"><h2>Calibration — Brier over time (HKT)</h2><div class="chart-box"><canvas id="chart-calib"></canvas></div></section>
   </main>
   <script src="static/app.js" defer></script>
 </body>

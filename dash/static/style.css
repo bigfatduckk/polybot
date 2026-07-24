@@ -42,7 +42,9 @@ th{color:var(--muted);font-weight:400;text-transform:uppercase;letter-spacing:.5
 .gauge .bar{flex:1;height:6px;background:var(--panel2);border-radius:3px;overflow:hidden}
 .gauge .fill{height:100%;background:var(--accent)}
 .card.err{border-color:var(--red)}
-canvas{max-height:200px}
+.chart-box{position:relative;width:100%;height:220px}
+table .desc{word-break:break-word;max-width:260px}
+.pos-yes{color:var(--green)} .pos-no{color:var(--red)}
 @media(max-width:900px){
   .grid{grid-template-columns:1fr}
   .span8,.span7,.span6,.span5,.span4{grid-column:span 1}
@@ -51,6 +53,6 @@ canvas{max-height:200px}
   .order-winrate{order:7} .order-rejections{order:8} .order-candidates{order:9}
   .order-edgedist{order:10} .order-stationbias{order:11} .order-calib{order:12}
   .brand{font-size:12px} .stats{flex-wrap:wrap;gap:8px}
-  .feed{max-height:180px} canvas{max-height:110px}
+  .feed{max-height:180px} .chart-box{height:200px}
   .hide-mobile{display:none}
 }

@@ -166,16 +166,33 @@ def api_health():
     if rows:
         pusd = rows[0]["usdc"]
         gas = rows[0]["matic"]
+    # Account PnL = realized (sum of settled trade PnL). This is the bot's own
+    # canonical figure (positions.py: COALESCE(SUM(pnl),0)). The old header used
+    # free-pUSD - $200, a broken proxy: the $200 probe isn't a cost basis, and
+    # free pUSD falls as cash moves into open positions — so it diverged from
+    # the real trading result. at_risk = open notional (cost locked in orders).
+    pnl_rows, _ = _query(conn_live,
+        "SELECT COALESCE(SUM(pnl),0) AS s, COUNT(*) AS n FROM live_settlements WHERE pnl IS NOT NULL")
+    realized = float(pnl_rows[0]["s"]) if pnl_rows else 0.0
+    settled_n = int(pnl_rows[0]["n"]) if pnl_rows else 0
+    risk_rows, _ = _query(conn_live,
+        "SELECT COALESCE(SUM(price*size),0) AS s, COUNT(*) AS n FROM live_orders "
+        "WHERE status IN ('posted','open','partial','filled')")
+    at_risk = float(risk_rows[0]["s"]) if risk_rows else 0.0
+    open_n = int(risk_rows[0]["n"]) if risk_rows else 0
     live_err = bal_err or halt_err
     if live_err:
         out["instances"]["LIVE"] = {
             "status": "unreachable", "bankroll": None, "gas": None, "pusd": None,
+            "realized_pnl": None, "at_risk": None, "settled": 0, "open": 0,
             "last_tick_age": None, "halted": False, "error": live_err,
         }
     else:
         out["instances"]["LIVE"] = {
             "status": "halted" if halted else "running",
             "bankroll": pusd, "gas": gas, "pusd": pusd,
+            "realized_pnl": round(realized, 2), "at_risk": round(at_risk, 2),
+            "settled": settled_n, "open": open_n,
             "last_tick_age": _last_tick_age(conn_live), "halted": halted,
         }
     return jsonify(out)
@@ -285,13 +302,16 @@ def api_winrate():
             won = r["won"]
             edges.append({"edge": label, "won": won, "total": total,
                           "rate": round(won / total, 4) if total else None})
-    _wr("weather", conn_a, "SELECT COUNT(*) AS n, SUM(resolved_yes) AS won FROM settlements WHERE pnl IS NOT NULL")
-    _wr("weatherB", conn_b, "SELECT COUNT(*) AS n, SUM(resolved_yes) AS won FROM settlements WHERE pnl IS NOT NULL")
-    erows, _ = _query(conn_a, "SELECT edge, COUNT(*) AS n, SUM(resolved_yes) AS won FROM pm_settlements WHERE pnl IS NOT NULL GROUP BY edge")
+    # ponytail: win = trade PnL > 0, NOT SUM(resolved_yes). resolved_yes is the
+    # *market* outcome (did YES pay); a NO bet wins when resolved_yes=0, which
+    # SUM(resolved_yes) miscounts as a loss. PnL sign is the true trade result.
+    _wr("weather", conn_a, "SELECT COUNT(*) AS n, SUM(CASE WHEN pnl>0 THEN 1 ELSE 0 END) AS won FROM settlements WHERE pnl IS NOT NULL")
+    _wr("weatherB", conn_b, "SELECT COUNT(*) AS n, SUM(CASE WHEN pnl>0 THEN 1 ELSE 0 END) AS won FROM settlements WHERE pnl IS NOT NULL")
+    erows, _ = _query(conn_a, "SELECT edge, COUNT(*) AS n, SUM(CASE WHEN pnl>0 THEN 1 ELSE 0 END) AS won FROM pm_settlements WHERE pnl IS NOT NULL GROUP BY edge")
     for r in erows:
         edges.append({"edge": r["edge"], "won": r["won"], "total": r["n"],
                       "rate": round(r["won"] / r["n"], 4) if r["n"] else None})
-    _wr("live", conn_live, "SELECT COUNT(*) AS n, SUM(resolved_yes) AS won FROM live_settlements WHERE pnl IS NOT NULL")
+    _wr("live", conn_live, "SELECT COUNT(*) AS n, SUM(CASE WHEN pnl>0 THEN 1 ELSE 0 END) AS won FROM live_settlements WHERE pnl IS NOT NULL")
     return jsonify({"ts": now_iso(), "edges": edges})
 
 
@@ -308,23 +328,59 @@ def api_feed():
     return jsonify({"ts": now_iso(), "rows": out, "error": err})
 
 
+def _question_map():
+    """market_id -> {question, bucket} from paper A snapshot tables.
+    The live DB stores no description; the question (city, degree, date) lives in
+    the paper-A snapshots captured during scanning. First-seen wins (same question
+    re-captured each scan)."""
+    m = {}
+    for tbl in ("snapshots", "pm_snapshots"):
+        rows, _ = _query(conn_a,
+            f"SELECT market_id, question, bucket_key FROM {tbl} WHERE market_id IS NOT NULL")
+        for r in rows or []:
+            mid = r["market_id"]
+            if mid and mid not in m:
+                m[mid] = {"question": (r["question"] or "").strip(),
+                          "bucket": r["bucket_key"] or ""}
+    return m
+
+
+def _describe(mid, city, mdate, bucket, qmap):
+    """Human-readable trade: prefer the stored question; else city+bucket+date;
+    else the redacted id (never the raw market_id, which may look key-shaped)."""
+    info = qmap.get(mid) or {}
+    q = info.get("question")
+    if q:
+        return q
+    parts = [p for p in [city, bucket] if p]
+    if parts:
+        return " ".join(parts)
+    return _redact(mid) or ""
+
+
 @app.get("/api/positions")
 def api_positions():
+    qmap = _question_map()
     rows, err = _query(conn_live,
-        """SELECT id, ts, market_id, city, market_date, signal_side, price, size,
-                  status, dry_run FROM live_orders
+        """SELECT id, ts, market_id, city, market_date, bucket_key, signal_side,
+                  price, size, status, dry_run FROM live_orders
            WHERE status IN ('posted','open','partial','filled') ORDER BY id DESC""")
     out = []
     for r in rows or []:
         cost = (r["price"] or 0) * (r["size"] or 0)
         out.append({"instance": "LIVE", "id": r["id"], "market_id": _redact(r["market_id"]),
+                    "desc": _describe(r["market_id"], r["city"], r["market_date"], r["bucket_key"], qmap),
                     "city": r["city"], "date": r["market_date"], "side": r["signal_side"],
                     "price": r["price"], "size": r["size"], "cost": round(cost, 2),
                     "status": r["status"], "dry_run": bool(r["dry_run"])})
     # paper A open orders (non-live)
-    arows, _ = _query(conn_a, "SELECT market_id, side, price, size, status FROM orders WHERE status IN ('posted','open','partial','filled') ORDER BY id DESC LIMIT 50")
+    arows, _ = _query(conn_a,
+        "SELECT market_id, side, price, size, status, city, market_date FROM orders "
+        "WHERE status IN ('posted','open','partial','filled') ORDER BY id DESC LIMIT 50")
     for r in arows or []:
-        out.append({"instance": "A", "market_id": _redact(r["market_id"]), "side": r["side"],
+        out.append({"instance": "A", "market_id": _redact(r["market_id"]),
+                    "desc": _describe(r["market_id"], r["city"], r["market_date"], None, qmap),
+                    "city": r["city"], "date": r["market_date"], "side": r["side"],
                     "price": r["price"], "size": r["size"], "status": r["status"], "dry_run": True})
     return jsonify({"ts": now_iso(), "rows": out})
 

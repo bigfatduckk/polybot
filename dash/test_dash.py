@@ -3,8 +3,18 @@ Run: python test_dash.py   (also discoverable by pytest as test_*)."""
 import os
 import sqlite3
 import tempfile
+from datetime import datetime, timezone, timedelta
 
 import dash
+
+# ponytail: seed timestamps relative to now so the 24h/7d-window endpoint tests
+# don't rot as the calendar advances (the old fixed 2026-07-22 seeds fell out of
+# the 24h rejections window two days later).
+def _recent(hours_ago=1):
+    return (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat(timespec="seconds")
+
+_RECENT = _recent(1)
+_RECENT_MIN = _recent(0)
 
 
 def _make_db(path):
@@ -186,12 +196,12 @@ def _seed_pipeline_dbs(d):
         "CREATE TABLE pm_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, edge TEXT, scan_id INTEGER, market_id TEXT, token_id TEXT, side TEXT, price REAL, size REAL, maker_or_taker TEXT, edge_size REAL, kelly_fraction REAL, status TEXT, meta_json TEXT)",
     ]:
         a.execute(s)
-    a.execute("INSERT INTO candidates(ts,market_id,side,p_model,edge_after_costs) VALUES('2026-07-22T10:00:00+00:00','mktA','YES',0.7,0.08)")
-    a.execute("INSERT INTO candidates(ts,market_id,side,p_model,edge_after_costs) VALUES('2026-07-22T10:00:00+00:00','mktB','NO',0.3,0.02)")
-    a.execute("INSERT INTO pm_candidates(ts,edge,market_id,side,p_model,edge_after_costs) VALUES('2026-07-22T10:00:00+00:00','flb','mktF','YES',0.6,0.05)")
-    a.execute("INSERT INTO orders(ts,market_id,side,status) VALUES('2026-07-22T10:00:00+00:00','mktA','YES','open')")
+    a.execute("INSERT INTO candidates(ts,market_id,side,p_model,edge_after_costs) VALUES(?,'mktA','YES',0.7,0.08)",(_RECENT,))
+    a.execute("INSERT INTO candidates(ts,market_id,side,p_model,edge_after_costs) VALUES(?,'mktB','NO',0.3,0.02)",(_RECENT,))
+    a.execute("INSERT INTO pm_candidates(ts,edge,market_id,side,p_model,edge_after_costs) VALUES(?,'flb','mktF','YES',0.6,0.05)",(_RECENT,))
+    a.execute("INSERT INTO orders(ts,market_id,side,status) VALUES(?,'mktA','YES','open')",(_RECENT,))
     a.execute("CREATE TABLE pm_fills (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, edge TEXT, order_id INTEGER, market_id TEXT, token_id TEXT, side TEXT, price REAL, size REAL, maker_or_taker TEXT, fill_ts TEXT, pnl REAL, meta_json TEXT)")
-    a.execute("INSERT INTO pm_fills(ts,edge,market_id) VALUES('2026-07-22T10:00:00+00:00','flb','mktF')")
+    a.execute("INSERT INTO pm_fills(ts,edge,market_id) VALUES(?,'flb','mktF')",(_RECENT,))
     a.commit(); a.close()
     l = sq.connect(os.path.join(d, "live.db"))
     for s in [
@@ -200,9 +210,9 @@ def _seed_pipeline_dbs(d):
         "CREATE TABLE live_fills (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, order_id INTEGER, clob_trade_id TEXT, market_id TEXT, exec_token_id TEXT, side TEXT, price REAL, size REAL, fee REAL, fill_ts TEXT, raw_json TEXT)",
     ]:
         l.execute(s)
-    l.execute("INSERT INTO live_ticks(ts,job,note,detail_json) VALUES('2026-07-22T10:00:00+00:00','weather','skip:low_edge','{}')")
-    l.execute("INSERT INTO live_ticks(ts,job,note,detail_json) VALUES('2026-07-22T10:01:00+00:00','weather','posted','{}')")
-    l.execute("INSERT INTO live_orders(ts,market_id,signal_side,price,size,status,dry_run) VALUES('2026-07-22T10:01:00+00:00','mktL','YES',0.55,10,'posted',1)")
+    l.execute("INSERT INTO live_ticks(ts,job,note,detail_json) VALUES(?,'weather','skip:low_edge','{}')",(_RECENT,))
+    l.execute("INSERT INTO live_ticks(ts,job,note,detail_json) VALUES(?,'weather','posted','{}')",(_RECENT_MIN,))
+    l.execute("INSERT INTO live_orders(ts,market_id,signal_side,price,size,status,dry_run) VALUES(?,'mktL','YES',0.55,10,'posted',1)",(_RECENT_MIN,))
     l.commit(); l.close()
     return os.path.join(d, "a.db"), os.path.join(d, "live.db")
 
