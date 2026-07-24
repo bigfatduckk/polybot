@@ -182,14 +182,16 @@ def api_health():
     open_n = int(risk_rows[0]["n"]) if risk_rows else 0
     # Unrealized PnL = mark-to-market of open live positions vs entry price,
     # using the snapshot YES mid as the mark (stale up to ~1h, no live feed).
-    pmap = _price_map()
+    # Targeted indexed lookup of only the open market_ids — NOT a full-scan map
+    # (snapshots is 207k rows; scanning it every 10s poll timed out the server).
     op_rows, _ = _query(conn_live,
         "SELECT market_id, signal_side, price, size FROM live_orders "
         "WHERE status IN ('posted','open','partial','filled')")
+    lookup = _snapshot_lookup([r["market_id"] for r in (op_rows or []) if r["market_id"]])
     unr = 0.0
     marked = 0
     for r in op_rows or []:
-        u = _unrealized(r["signal_side"], r["price"], r["size"], pmap.get(r["market_id"]))
+        u = _unrealized(r["signal_side"], r["price"], r["size"], lookup.get(r["market_id"], {}))
         if u is not None:
             unr += u
             marked += 1
@@ -345,28 +347,34 @@ def api_feed():
     return jsonify({"ts": now_iso(), "rows": out, "error": err})
 
 
-def _question_map():
-    """market_id -> {question, bucket} from paper A snapshot tables.
-    The live DB stores no description; the question (city, degree, date) lives in
-    the paper-A snapshots captured during scanning. First-seen wins (same question
-    re-captured each scan)."""
-    m = {}
-    for tbl in ("snapshots", "pm_snapshots"):
-        rows, _ = _query(conn_a,
-            f"SELECT market_id, question, bucket_key FROM {tbl} WHERE market_id IS NOT NULL")
-        for r in rows or []:
-            mid = r["market_id"]
-            if mid and mid not in m:
-                m[mid] = {"question": (r["question"] or "").strip(),
-                          "bucket": r["bucket_key"] or ""}
-    return m
+def _snapshot_lookup(market_ids):
+    """Targeted lookup of question + YES bid/ask for the given market_ids, via
+    idx_snap_market. Replaces the old full-scan _question_map/_price_map, which
+    scanned ~970k rows (snapshots 207k + pm_snapshots 763k) every poll and
+    timed out the single-threaded Flask dev server on /api/health. Live
+    positions are all weather markets, so snapshots alone covers them; latest
+    scan wins (ORDER BY id DESC, first-seen per id)."""
+    out = {}
+    ids = [m for m in market_ids if m]
+    if not ids:
+        return out
+    ph = ",".join("?" * len(ids))
+    rows, _ = _query(conn_a,
+        f"SELECT market_id, question, bucket_key, best_bid, best_ask FROM snapshots "
+        f"WHERE market_id IN ({ph}) ORDER BY id DESC", tuple(ids))
+    for r in rows or []:
+        mid = r["market_id"]
+        if mid and mid not in out:
+            out[mid] = {"question": (r["question"] or "").strip(),
+                        "bucket": r["bucket_key"] or "",
+                        "bid": r["best_bid"], "ask": r["best_ask"]}
+    return out
 
 
-def _describe(mid, city, mdate, bucket, qmap):
+def _describe(mid, city, mdate, bucket, info):
     """Human-readable trade: prefer the stored question; else city+bucket+date;
     else the redacted id (never the raw market_id, which may look key-shaped)."""
-    info = qmap.get(mid) or {}
-    q = info.get("question")
+    q = (info or {}).get("question")
     if q:
         return q
     parts = [p for p in [city, bucket] if p]
@@ -385,27 +393,12 @@ def _mid(b, a):
     return round((b + a) / 2, 4)
 
 
-def _price_map():
-    """market_id -> latest YES mid price, for marking open positions.
-    The live DB has no quote feed; the only mark available is the paper-A snapshot
-    best_bid/ask from the last scan (stale up to ~1h). Better than no mark."""
-    m = {}
-    for tbl in ("snapshots", "pm_snapshots"):
-        rows, _ = _query(conn_a,
-            f"SELECT market_id, best_bid, best_ask FROM {tbl} "
-            "WHERE market_id IS NOT NULL ORDER BY id DESC")
-        for r in rows or []:
-            mid = r["market_id"] and _mid(r["best_bid"], r["best_ask"])
-            if mid is not None and r["market_id"] not in m:
-                m[r["market_id"]] = mid
-    return m
-
-
-def _unrealized(side, entry, size, yes_mid):
-    """Mark-to-market for one open position. YES: size*(yes_mid-entry);
-    NO: size*((1-yes_mid)-entry). None if any input missing.
+def _unrealized(side, entry, size, info):
+    """Mark-to-market for one open position. YES/buy: size*(yes_mid-entry);
+    NO/sell: size*((1-yes_mid)-entry). None if no mark or any input missing.
     Side vocabularies: paper-A orders use 'YES'/'NO'; live_orders use
     'buy'/'sell' (LiveOrderSpec: buy=YES token, sell=NO token)."""
+    yes_mid = _mid((info or {}).get("bid"), (info or {}).get("ask"))
     if entry is None or size is None or yes_mid is None:
         return None
     s = str(side or "").upper()
@@ -420,32 +413,36 @@ def _unrealized(side, entry, size, yes_mid):
 
 @app.get("/api/positions")
 def api_positions():
-    qmap = _question_map()
-    pmap = _price_map()
     rows, err = _query(conn_live,
         """SELECT id, ts, market_id, city, market_date, bucket_key, signal_side,
                   price, size, status, dry_run FROM live_orders
            WHERE status IN ('posted','open','partial','filled') ORDER BY id DESC""")
-    out = []
-    for r in rows or []:
-        cost = (r["price"] or 0) * (r["size"] or 0)
-        out.append({"instance": "LIVE", "id": r["id"], "market_id": _redact(r["market_id"]),
-                    "desc": _describe(r["market_id"], r["city"], r["market_date"], r["bucket_key"], qmap),
-                    "city": r["city"], "date": r["market_date"], "side": r["signal_side"],
-                    "price": r["price"], "size": r["size"], "cost": round(cost, 2),
-                    "upnl": _unrealized(r["signal_side"], r["price"], r["size"], pmap.get(r["market_id"])),
-                    "status": r["status"], "dry_run": bool(r["dry_run"])})
-    # paper A open orders (non-live)
     arows, _ = _query(conn_a,
         "SELECT market_id, side, price, size, status, city, market_date FROM orders "
         "WHERE status IN ('posted','open','partial','filled') ORDER BY id DESC LIMIT 50")
+    # One targeted indexed lookup for every market_id we need to describe/mark —
+    # NOT a full-scan map over the 970k-row snapshot tables.
+    ids = {r["market_id"] for r in (rows or [])}
+    ids |= {r["market_id"] for r in (arows or [])}
+    lookup = _snapshot_lookup(ids)
+    out = []
+    for r in rows or []:
+        info = lookup.get(r["market_id"], {})
+        cost = (r["price"] or 0) * (r["size"] or 0)
+        out.append({"instance": "LIVE", "id": r["id"], "market_id": _redact(r["market_id"]),
+                    "desc": _describe(r["market_id"], r["city"], r["market_date"], r["bucket_key"], info),
+                    "city": r["city"], "date": r["market_date"], "side": r["signal_side"],
+                    "price": r["price"], "size": r["size"], "cost": round(cost, 2),
+                    "upnl": _unrealized(r["signal_side"], r["price"], r["size"], info),
+                    "status": r["status"], "dry_run": bool(r["dry_run"])})
     for r in arows or []:
+        info = lookup.get(r["market_id"], {})
         out.append({"instance": "A", "market_id": _redact(r["market_id"]),
-                    "desc": _describe(r["market_id"], r["city"], r["market_date"], None, qmap),
+                    "desc": _describe(r["market_id"], r["city"], r["market_date"], None, info),
                     "city": r["city"], "date": r["market_date"], "side": r["side"],
                     "price": r["price"], "size": r["size"],
                     "cost": round((r["price"] or 0) * (r["size"] or 0), 2),
-                    "upnl": _unrealized(r["side"], r["price"], r["size"], pmap.get(r["market_id"])),
+                    "upnl": _unrealized(r["side"], r["price"], r["size"], info),
                     "status": r["status"], "dry_run": True})
     return jsonify({"ts": now_iso(), "rows": out})
 
