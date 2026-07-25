@@ -37,11 +37,11 @@ MONTH_IDX = {m: i + 1 for i, m in enumerate(MONTHS)}
 
 TITLE_RE = re.compile(r"highest temperature in (.+?) on (.+)", re.I)
 SLUG_DATE_RE = re.compile(r"-on-([a-z]+)-(\d+)-(\d+)$")
-BUCKET_BELOW = re.compile(r"(\d+)°([CF])\s+or\s+below", re.I)
-BUCKET_ABOVE = re.compile(r"(\d+)°([CF])\s+or\s+higher", re.I)
+BUCKET_BELOW = re.compile(r"(-?\d+)°([CF])\s+or\s+below", re.I)
+BUCKET_ABOVE = re.compile(r"(-?\d+)°([CF])\s+or\s+higher", re.I)
 BUCKET_BETWEEN = re.compile(r"between\s+(\d+)-(\d+)°([CF])", re.I)
-BUCKET_EXACT = re.compile(r"(\d+)°([CF])(?!\s+or)", re.I)
-STATION_RE = re.compile(r"recorded at the (.+?)(?:\.|,|$)", re.I)
+BUCKET_EXACT = re.compile(r"(-?\d+)°([CF])(?!\s+or)", re.I)
+STATION_RE = re.compile(r"recorded at the (.+?(?:Airport )?Station)\b", re.I)
 # ICAO = last 4-uppercase segment of the Wunderground URL. US URLs have an extra
 # state segment (/us/ga/atlanta/KATL) vs non-US (/ar/ezeiza/SAEZ); greedy .+ to the
 # last uppercase-4 handles both. No re.I: station slugs (atlanta, ezeiza) are lowercase
@@ -65,6 +65,27 @@ CITY_TZ.update({
     "Las Vegas": "America/Los_Angeles", "Salt Lake City": "America/Denver",
     "Minneapolis": "America/Chicago", "Detroit": "America/Detroit",
 })
+# ICAO -> tz (primary; unambiguous vs city-name variants like "NYC"/"New York City").
+# Covers all 49 stations observed on Polymarket "Highest temperature" markets.
+ICAO_TZ = {
+    "KLGA": "America/New_York", "KATL": "America/New_York", "KMIA": "America/New_York",
+    "KDAL": "America/Chicago", "KORD": "America/Chicago", "KAUS": "America/Chicago",
+    "KHOU": "America/Chicago", "KBKF": "America/Denver",
+    "KSEA": "America/Los_Angeles", "KLAX": "America/Los_Angeles", "KSFO": "America/Los_Angeles",
+    "CYYZ": "America/Toronto", "SAEZ": "America/Argentina/Buenos_Aires",
+    "SBGR": "America/Sao_Paulo", "MMMX": "America/Mexico_City",
+    "EGLC": "Europe/London", "LFPG": "Europe/Paris", "LFPB": "Europe/Paris",
+    "EDDM": "Europe/Berlin", "EPWA": "Europe/Warsaw", "LEMD": "Europe/Madrid",
+    "LIMC": "Europe/Rome", "EHAM": "Europe/Amsterdam", "EFHK": "Europe/Helsinki",
+    "LTAC": "Europe/Istanbul", "OEJN": "Asia/Riyadh", "LLBG": "Asia/Jerusalem",
+    "DNMM": "Africa/Lagos", "FACT": "Africa/Johannesburg", "OPKC": "Asia/Karachi",
+    "RKSI": "Asia/Seoul", "RKPK": "Asia/Seoul", "RJTT": "Asia/Tokyo", "RCSS": "Asia/Taipei",
+    "WSSS": "Asia/Singapore", "WMKK": "Asia/Kuala_Lumpur", "WIHH": "Asia/Jakarta",
+    "MPMG": "Asia/Manila", "RPLL": "Asia/Manila", "VHHH": "Asia/Hong_Kong",
+    "ZSPD": "Asia/Shanghai", "ZBAA": "Asia/Shanghai", "ZHHH": "Asia/Shanghai",
+    "ZUCK": "Asia/Shanghai", "ZGSZ": "Asia/Shanghai", "ZUUU": "Asia/Shanghai",
+    "ZGGG": "Asia/Shanghai", "VILK": "Asia/Kolkata",
+}
 
 
 def _client():
@@ -121,13 +142,14 @@ def parse_event(ev, conn):
     event_date_local = None
     if sd and sd.group(1) in MONTH_IDX:
         event_date_local = f"{sd.group(3)}-{MONTH_IDX[sd.group(1)]:02d}-{int(sd.group(2)):02d}"
-    tz_name = CITY_TZ.get(city)
     n = 0
     for mkt in (ev.get("markets") or []):
         q = mkt.get("question") or ""
         desc = mkt.get("description") or ""
         b = parse_bucket(q)
         icao_m = ICAO_RE.search(desc)
+        icao = icao_m.group(1) if icao_m else None
+        tz_name = ICAO_TZ.get(icao) or CITY_TZ.get(city)
         station_m = STATION_RE.search(desc)
         native_m = DEG_UNIT_RE.search(desc)
         rsrc = mkt.get("resolutionSource") or ""
@@ -156,7 +178,7 @@ def parse_event(ev, conn):
         status = "ok"
         if b is None:
             status = "excluded"  # couldn't parse bucket -> not a usable row
-        elif not icao_m:
+        elif icao is None:
             status = "manual"  # no ICAO -> can't grade, flag for review
         elif not tz_name:
             status = "manual"  # city tz unknown -> flag for review
@@ -174,7 +196,7 @@ def parse_event(ev, conn):
             (str(mkt.get("id", "")), str(mkt.get("conditionId", "")), yes_tok,
              str(ev.get("id", "")), q, desc,
              (station_m.group(1).strip() if station_m else None),
-             (icao_m.group(1) if icao_m else None), unit, lo, hi, tz_name,
+             icao, unit, lo, hi, tz_name,
              event_date_local, rsrc, resolved_yes, str(mkt.get("endDate", "")),
              str(mkt.get("closedTime", "")), status,
              (native_m.group(1).lower() if native_m else None),
