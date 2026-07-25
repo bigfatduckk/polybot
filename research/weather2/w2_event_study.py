@@ -79,16 +79,22 @@ def fetch_history_minute(token, start_ts, end_ts):
         return []
 
 
-def find_crossing(conn, icao, date_local, bucket_lo):
-    """First METAR obs where running local-day max >= bucket_lo. Returns (ts_local_str, running_max) or None."""
+def find_crossing(conn, icao, date_local, bucket_lo, unit):
+    """First METAR obs where running local-day DISPLAY-UNIT max >= bucket_lo.
+
+    metar_obs.tmpc is always °C (IEM ASOS). The market's bucket_lo is in the display
+    unit (°C for C-native stations, °F for F-native). Convert each obs to the display
+    unit so the crossing is in the space the venue resolves on.
+    """
     rows = conn.execute(
         "SELECT valid_local, tmpc FROM metar_obs WHERE icao=? AND valid_local LIKE ? "
         "AND tmpc IS NOT NULL ORDER BY valid_local",
         (icao, date_local + "%")).fetchall()
     rmax = None
     for r in rows:
-        t = float(r["tmpc"])
-        rmax = t if rmax is None else max(rmax, t)
+        c = float(r["tmpc"])
+        disp = c if unit == "C" else round(c * 9.0 / 5.0 + 32.0)  # F display = round(C->F)
+        rmax = disp if rmax is None else max(rmax, disp)
         if rmax >= bucket_lo:
             return r["valid_local"], rmax
     return None
@@ -152,7 +158,7 @@ def main():
     n_no_minute = 0
     exploitable = []      # subset passing the exploitability gate
     for i, m in enumerate(markets):
-        cr = find_crossing(conn, m["icao"], m["event_date_local"], m["bucket_lo"])
+        cr = find_crossing(conn, m["icao"], m["event_date_local"], m["bucket_lo"], m["unit"])
         if cr is None:
             n_no_crossing += 1
             continue
