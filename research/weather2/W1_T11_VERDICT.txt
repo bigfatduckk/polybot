@@ -101,3 +101,32 @@ VALIDITY NOTES (discount even the statistical pass slightly; both point same dir
 =====================================================================================
 STOP-GATE: human review. Phase 2 NOT entered. Live arm STAYS HALTED.
 =====================================================================================
+
+=====================================================================================
+POSTERIOR-GAP READOUT — 2026-07-26 (pre-committed rule in commit 277e9a6, verified)
+=====================================================================================
+blended_gap_cents = 100 * 0.1823 * |logit(pm)-logit(mid)| * mid*(1-mid)
+  distribution: min 0.000, p25 0.727, median 1.513, p75 3.012, p95 6.807, max 21.511
+  >=4c rows: 1135 (16.2% of OOS) — FAT tail (not thin; ~1517/year annualized)
+  model directional win-rate on >4c rows: 63.1%  vs  market: 66.8%  (-3.7pp)
+  => MODEL-ERROR signature: where the regression implies the most "true edge", the
+     model is WORSE than the market. The +0.18 coef picks up a small affine signal on
+     average, but large divergences (the only ones that could clear costs) are
+     dominated by model error. Same selection trap that made the killed blend look
+     worst on its most-confident fills.
+  DECISION (pre-committed): CLOSURE CONFIRMED by arithmetic. No split-sample test.
+     Never run another weather regression on this signal. W1 dead, no appeal.
+
+=====================================================================================
+W2 M1 (late-trading gate) — 2026-07-26
+=====================================================================================
+late_trading table (Task 0.3): 400 markets sampled, 155 (38.8%) had >=1 price point
+in the final 4h of the local event day. W2 M1 gate (>=20% pooled): PASS (38.8%).
+Activity is modest (median 0, mean 1.2 pts/4h, max 5) and broadly distributed across
+stations (33-52% per station, no concentration). W2 is NOT foreclosed by M1 — it
+remains alive for the M2 event-study decision (stale-price windows after METAR
+boundary crossings, at exploitable frequency). M2 is ~5-8h, bounded, judgment call
+vs FLB P6. Hard cap on all remaining weather work: 8h.
+
+W1 fully closed (arithmetic-confirmed). W2 = the only open weather angle.
+Live arm STAYS HALTED. ~6.5h of 30h budget used.
