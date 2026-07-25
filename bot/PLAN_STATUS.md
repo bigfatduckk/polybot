@@ -141,3 +141,14 @@ GATE (final, VHHH excluded): 99.56% agreement (20332/20422). ALL floors pass: >=
 VERDICT (research/weather2/ORACLE_AUDIT.md): METAR replica is a valid grading oracle for the 48-station °C+°F non-US-heavy W1 scope. Weather proceeds to W1 fan-out (Task 1.0 pre-reg -> 1.1 training data -> 1.2 EMOS -> 1.3 bucket probs -> 1.4 T1.1-W1). VHHH + 1639 manual + 133 null-date stay excluded.
 
 STOP-GATE: per plan non-negotiable #6, awaiting Marcus review before W1 fan-out. Budget: ~4h of 30 used. Live arm STAYS HALTED.
+
+## WEATHER W2 M2 — DONE + KILLED 2026-07-26 (entire weather class now CLOSED)
+Code: research/weather2/w2_event_study.py (polybot 012dbc5, VPS-synced). For each resolved '>=X or higher' YES market: tau = first METAR obs where running local-day display-unit max >= bucket_lo (max monotone => YES decided at tau). CLOB fidelity=1, sample YES price at tau+5/10/15/30/60min. Exploitable iff price@tau+10 <= 0.92 (gap>=4c after 2c spread + 2% fee). Window = time until price >= 0.97.
+
+RESULT (full, 261 markets): 256 crossing events w/ minute coverage (>= 120 floor). 11 exploitable over ~2.3 months = 4.7/month. median window 0.9 min.
+VERDICT: KILL W2 — BOTH pre-reg conditions fired:
+  - 4.7 exploitable/month < 8/month bar. 11 concentrate in non-US thin (MPMG 7, RKSI 3, MMMX 1) — the off-hours hope — but still below bar.
+  - median window 0.9 min < 10 min bar. Market converges to 0.97 within ~1 min of crossing — too fast for any cron (:57 is 2-4 min behind the :53-:56 print).
+  Depth gate unenforced (prices-history has no trade sizes) — 4.7/month is optimistic; kill robust.
+
+WEATHER CLASS FULLY CLOSED: W1 (econ) + W2 (execution, here) + W3 (folded into W1) + W4 (plan-stage kill). No live path ever created. Permanent infra retained (oracle/market_map/T1.1/snapshots/EMOS) — reusable for any station-resolved class. Reopens ONLY with genuinely new info source (sub-hourly proprietary nowcast) or cost-structure change (W1) — NOT recalibration, NOT faster cron (W2 windows unreachable). Live arm STAYS HALTED. ~7h of 30h budget used.

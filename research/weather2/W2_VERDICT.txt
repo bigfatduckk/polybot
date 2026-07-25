@@ -1,0 +1,45 @@
+W2 M2 EVENT STUDY VERDICT — 2026-07-26
+========================================
+Pre-registered kill: exploitable events < 8/month OR median window < 10min.
+Floor: >= 120 events w/ minute coverage.
+
+markets scanned: 261 ('>=X or higher' resolved-YES)
+crossing events w/ minute coverage: 256 (no_crossing=3, no_minute=2)
+exploitable events: 11 over ~2.3 months => 4.7/month
+median stale-window: 0.9 min
+exploitable by station: {'MPMG': 7, 'RKSI': 3, 'MMMX': 1}
+
+LIMITATION: depth proxy = price-point density only (/prices-history has no trade
+sizes). The pre-reg's 'depth >= $50' gate is NOT enforced. Any SURVIVE would be
+optimistic on depth — and the 4.7/month here IS optimistic (real exploitable with
+$50 depth would be <= 4.7/month). The kill is robust to this limitation.
+
+VERDICT: KILL W2 (4.7 exploitable/month < 8; median window 0.9min < 10min)
+
+Both pre-registered kill conditions fired:
+  - 4.7 exploitable events/month < 8/month bar. The 11 exploitable concentrate in
+    non-US thin markets (MPMG Manila 7, RKSI Seoul 3, MMMX Mexico City 1) — the
+    "off-hours non-US" hope — but even there only 4.7/month, below the bar.
+  - median stale-window 0.9 min < 10 min bar. The market prices converge to 0.97
+    within ~1 minute of the METAR boundary crossing — far too fast for any cron-based
+    bot to catch (a :57 cron is already 2-4 min behind the :53-:56 METAR print, and
+    the window is 0.9 min). This is the "liquid markets are gone (<2 min)" outcome
+    Fable-5 anticipated; even the non-US thin markets are too fast.
+
+STOP-GATE: human review. Live arm STAYS HALTED.
+
+=====================================================================================
+WEATHER CLASS NOW FULLY CLOSED (all four angles):
+  W1 — KILLED on the economic gate (real-but-sub-cost signal; arithmetic-confirmed
+        via posterior-gap readout; coef +0.18 @ p=0.0000 but model worse than market
+        on large divergences). See W1_T11_VERDICT.txt.
+  W2 — KILLED here (4.7/month < 8; median window 0.9min < 10min).
+  W3 — folded into W1 as a correctness layer; no standalone verdict.
+  W4 — killed at plan stage (absorbed into W1's training target).
+The entire weather class is closed. No live-trading path was ever created.
+Permanent infrastructure retained: oracle replica (iem_oracle, 99.56%), market
+mapper, retrospective T1.1 harness, price snapshots, EMOS fit — reusable for any
+future station-resolved market class. Reopens ONLY with a genuinely new info source
+(sub-hourly proprietary nowcast, near-settlement feed) or a cost-structure change
+(W1) — NOT recalibration, NOT a faster cron (W2 windows are 0.9min, unreachable).
+Live arm STAYS HALTED. ~7h of 30h budget used.
