@@ -130,3 +130,14 @@ Bugs found + fixed during the run (self-check now covers both schemes):
 - STATION_RE stops at "Station" (was capturing the whole sentence).
 
 NEXT: STOP — awaiting Marcus review of the 20-row spot-check + the two residual decisions above before Task 0.2 (IEM METAR ingest + resolution-replica oracle gate). 30h budget: ~2h used on Task 0.1. Live arm STAYS HALTED.
+
+## WEATHER PHASE 0 — Task 0.2 (iem_oracle.py) — DONE + GATE PASSED 2026-07-25
+Code: research/weather2/iem_oracle.py (polybot 4642771, VPS-synced). IEM ASOS tmpc fetch (per-station-year, 2022-present, local tz, throttled 1.5s) -> replica_daily_max (native whole-deg C METAR -> F=round(C*9/5+32) -> max over local day). convmax vs each conversion: 0 disagreements. Tables metar_obs + station_day_max + oracle_validation (all rows, auditable).
+
+GATE (final, VHHH excluded): 99.56% agreement (20332/20422). ALL floors pass: >=60 station-days (20422), >=5 stations (48), >=2 non-US (37), both °C+C (C=14486 F=5936). Pilot 10-stn = 6/6; full 49-stn = 99.5% raw.
+- VHHH (Hong Kong) EXCLUDED: different-station oracle class (replica max=23 vs venue high=15-16, 8deg gap = HKO HQ Tsim Sha Tsui vs VHHH Chek Lap Kok). Same class as the 1639 manual exclusion. Only large-diff (>=5) outlier.
+- 90 residual mismatches (0.44%): all |diff|<=3 (68 are +-1), bidirectional, concentrated ZGSZ(54)/RKSI(24)/MPMG(8). SPECI/6-hr-max/Wunderground-processing noise — absorbed by W1 (EMOS trains on replica max). Not blocking.
+
+VERDICT (research/weather2/ORACLE_AUDIT.md): METAR replica is a valid grading oracle for the 48-station °C+°F non-US-heavy W1 scope. Weather proceeds to W1 fan-out (Task 1.0 pre-reg -> 1.1 training data -> 1.2 EMOS -> 1.3 bucket probs -> 1.4 T1.1-W1). VHHH + 1639 manual + 133 null-date stay excluded.
+
+STOP-GATE: per plan non-negotiable #6, awaiting Marcus review before W1 fan-out. Budget: ~4h of 30 used. Live arm STAYS HALTED.
