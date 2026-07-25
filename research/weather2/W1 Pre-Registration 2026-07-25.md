@@ -57,7 +57,8 @@ seed=42** (matches T1.1/P6 conventions).
    oracle and payoff coincide by construction (that's the fix for the old bug, not a new instance).
 
 ## Grading source — explicit (so the 90 residual mismatches cannot confuse anyone)
-**T1.1 outcomes come from the VENUE resolutions (`resolved_outcome` in `markets_map`), NEVER from
+**T1.1 outcomes come from the VENUE resolutions (`resolved_yes` in `markets_map` — the venue's
+resolved YES/NO from `outcomePrices`), NEVER from
 the replica.** The replica's jobs are (a) proving we understand the oracle — done, Task 0.2 — and
 (b) the EMOS *training target*. The 0.44% replica-vs-venue residual therefore only injects tiny
 target noise into EMOS training (harmless, slightly conservative); it **cannot contaminate
