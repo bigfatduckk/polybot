@@ -113,3 +113,20 @@ GATE AMENDED 2026-07-25 (USUD T1.1 Pre-Registration Amendment 2026-07-25.md, vau
 Cost-realism fix (this session): backtest_usud.py _trade_pnl was gross of fee (P4 fee bug in embryo). FIXED: subtract TAKER_FEE*entry*(1-entry)*size, matching settle._fill_pnl. SPREAD constant deleted (double-count — market_ask/market_bid are _walk_book effective prices, depth already priced). Verified numerically. Backtest not rerun (N=12 pointless). See bot/USUD_T11_VERDICT.txt.
 
 NOT done: backtest_usud not rerun; fee_rate-per-market exactness deferred; vault<->polybot PLAN_STATUS full reconcile deferred (vault was stale pre-session, now synced via this section). Live arm STAYS HALTED; no live USUD path. Does NOT block weather Phase 0.
+
+## WEATHER PHASE 0 — Task 0.1 (market_map.py) — DONE + STOP-GATE 2026-07-25
+Code: research/weather2/market_map.py (polybot commit 1bb0a04, VPS synced). Enumerates all "Highest temperature" Polymarket markets via gamma tag_id=104596 (paginated; closed+archived; catches ALL cities incl US the bot doesn't trade). Parses per-market description: station name, ICAO (last uppercase-4 segment of Wunderground URL), unit (°C 1-deg exact / °F 2-deg "between N-M"), integer bucket [lo,hi), tz (ICAO_TZ dict, 49 stations), event date (from slug). Resolution from event outcomePrices. DB: research/weather2/data/weather_research.db (new; never touches ERA5/old settlements/polymarket_bot*.db). Self-check PASS.
+
+RESULT: 2100 events, 22212 market rows, all resolved. 20573 'ok' (92.6%): 49 ICAOs, 68 dates, 1932 city-date clusters (city-date = icao|date), 14560 °C + 6013 °F. FAR exceeds oracle-audit floor (>=60 station-days, >=5 stations, >=2 non-US) and W1 floor (>=500 rows / >=250 clusters).
+
+STOP-GATE RESIDUALS (await Marcus review before Task 0.2):
+- 1639 'manual' (7.4%): EMPTY resolutionSource (non-Wunderground sources — Hong Kong, Tel Aviv, Istanbul, ...). ICAO can't be parsed from a URL that isn't there; left manual, NOT guessed (plan non-negotiable #1). Known: HK=VHHH, Tel Aviv=LLBG, Istanbul=LTAC (descriptions name the station). Does NOT block the oracle audit (ok set already exceeds floor). Decision: add a curated city->ICAO fallback for these, or leave excluded?
+- 133 null-date (0.6%): year-less slugs (on-january-1, no year — year-boundary markets). Recoverable from event endDate if wanted; not blocking.
+
+Bugs found + fixed during the run (self-check now covers both schemes):
+- °F markets use 2-degree "between N-M°F" buckets (not 1-degree exact); BUCKET_BETWEEN added, checked first. -? restored on below/above/exact (negative temps like -6°C) — safe because between handles the range hyphen first.
+- US Wunderground URLs have an extra state segment (/us/ga/atlanta/KATL) vs non-US (/ar/ezeiza/SAEZ); greedy .+ to last uppercase-4, drop re.I (lowercase city slugs excluded).
+- ICAO_TZ dict (49 stations) primary; CITY_TZ fallback.
+- STATION_RE stops at "Station" (was capturing the whole sentence).
+
+NEXT: STOP — awaiting Marcus review of the 20-row spot-check + the two residual decisions above before Task 0.2 (IEM METAR ingest + resolution-replica oracle gate). 30h budget: ~2h used on Task 0.1. Live arm STAYS HALTED.
