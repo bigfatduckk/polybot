@@ -277,7 +277,7 @@ def selfcheck():
     qs = ["11°C or below", "12°C", "13°C", "14°C", "15°C", "16°C", "17°C",
           "18°C", "19°C", "20°C", "21°C or higher"]
     bs = [parse_bucket(f"Will the highest temperature in X be {q} on Y?") for q in qs]
-    assert bs[0] == (None, 12) and bs[-1] == (21, None)
+    assert bs[0][:2] == (None, 12) and bs[-1][:2] == (21, None)
     for i in range(1, len(bs) - 1):
         assert bs[i][0] == bs[i - 1][1] or (i == 1 and bs[0][1] == 12)  # contiguous
     # exact must NOT match "or below"/"or higher"
