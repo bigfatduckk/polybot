@@ -140,40 +140,47 @@ def predict(params, rows):
     return mu, np.maximum(sig, 0.05)
 
 
-def bucket_prob(mu, sigma, bucket_lo, bucket_hi, native_unit):
+def bucket_prob(mu, sigma, bucket_lo, bucket_hi, native_unit, display_unit=None):
     """Rounding-aware probability that the reported max falls in [lo, hi).
 
-    native_unit = the station's NATIVE report unit ('C' or 'F'), from markets_map.
-    The venue DISPLAYS in the bucket's unit; for °C-native stations the display is
-    °F = round(C*9/5+32), so we integrate in native (°C) space and map through the
-    display conversion. NON-NEGOTIABLE: never integrate naive °F intervals for °C
-    stations (W3 lives here — naive integration misprices buckets with empty/half
-    °C preimages).
-
-    mu, sigma are in NATIVE degrees (the EMOS prediction space = reported-value
-    native degrees, since replica_max_reported is in the native unit).
+    native_unit  = the station's native report unit ('C' or 'F') — the space mu/sigma live in.
+    display_unit = the unit the bucket [lo,hi) is expressed in (the market's `unit`).
+    On Polymarket these always match (celsius->C markets, fahrenheit->F markets), so the
+    common path is direct integration in native space. The °C->°F display mapping is kept
+    only for the defensive case native=C, display=F (does not occur in this dataset but is
+    the W3 correctness layer the plan mandates): enumerate integer °C whose round(C*9/5+32)
+    lands in [lo,hi), sum P(round(X_C)=C). NON-NEGOTIABLE: never integrate naive °F
+    intervals for a °C-native/°F-display bucket (empty/half °C preimages mispriced).
     """
     mu = float(mu); sigma = max(float(sigma), 0.05)
-    if native_unit == "F":
-        # °F-native: reported value is whole-°F; P(round(X) in [lo,hi)) = Phi((hi-0.5-mu)/sig)-Phi((lo-0.5-mu)/sig)
+    if display_unit is None:
+        display_unit = native_unit
+    nu = (native_unit or "C").upper()[0]
+    du = (display_unit or "C").upper()[0]
+    if nu == du:
+        # native == display: direct whole-degree integration in native space.
+        # P(round(X) in [lo,hi)) = Phi((hi-0.5-mu)/sig) - Phi((lo-0.5-mu)/sig)
         lo = (bucket_lo - 0.5 - mu) / sigma if bucket_lo is not None else -np.inf
         hi = (bucket_hi - 0.5 - mu) / sigma if bucket_hi is not None else np.inf
-        return float(norm.cdf(hi) - norm.cdf(lo))
-    # °C-native: display = round(C*9/5+32). Enumerate integer °C whose display lands in [lo,hi).
-    # P(round(X_C)=C) for integer C = Phi((C+0.5-mu)/sig) - Phi((C-0.5-mu)/sig).
-    # Scan a wide °C range (mu ± 8 sigma) and sum contributions whose display maps into the bucket.
-    c_lo = int(math.floor(mu - 8 * sigma)) - 1
-    c_hi = int(math.ceil(mu + 8 * sigma)) + 1
-    p = 0.0
-    for c in range(c_lo, c_hi + 1):
-        disp = int(round(c * 9.0 / 5.0 + 32.0))
-        in_bucket = (bucket_lo is None or disp >= bucket_lo) and (bucket_hi is None or disp < bucket_hi)
-        if not in_bucket:
-            continue
-        plo = (c - 0.5 - mu) / sigma
-        phi = (c + 0.5 - mu) / sigma
-        p += float(norm.cdf(phi) - norm.cdf(plo))
-    return min(max(p, 0.0), 1.0)
+        return float(max(norm.cdf(hi) - norm.cdf(lo), 0.0))
+    if nu == "C" and du == "F":
+        # °C-native reported, °F-display bucket: enumerate integer °C whose display maps in.
+        c_lo = int(math.floor(mu - 8 * sigma)) - 1
+        c_hi = int(math.ceil(mu + 8 * sigma)) + 1
+        p = 0.0
+        for c in range(c_lo, c_hi + 1):
+            disp = int(round(c * 9.0 / 5.0 + 32.0))
+            in_bucket = (bucket_lo is None or disp >= bucket_lo) and (bucket_hi is None or disp < bucket_hi)
+            if not in_bucket:
+                continue
+            plo = (c - 0.5 - mu) / sigma
+            phi = (c + 0.5 - mu) / sigma
+            p += float(norm.cdf(phi) - norm.cdf(plo))
+        return min(max(p, 0.0), 1.0)
+    # F-native, C-display (does not occur): fall back to direct integration in F space.
+    lo = (bucket_lo - 0.5 - mu) / sigma if bucket_lo is not None else -np.inf
+    hi = (bucket_hi - 0.5 - mu) / sigma if bucket_hi is not None else np.inf
+    return float(max(norm.cdf(hi) - norm.cdf(lo), 0.0))
 
 
 def _crps_normal(mu, sig, y):
@@ -269,28 +276,28 @@ def selfcheck():
     print(f"[self-check] synthetic fit: slope={params[1]:.3f} (expect ~0.9), "
           f"emos_crps={emos:.3f} < raw_crps={raw:.3f} OK")
     # Task 1.3: bucket_prob
-    # °F-native: a tight dist at mu=80, sig=1 -> P(round in [80,81)) ~ high, ~Phi-shaped
+    # °F-native, °F-display: direct. mu=80, sig=1 -> P(round in [80,81))
     p_f = bucket_prob(80.0, 1.0, 80, 81, "F")
     assert 0.3 < p_f < 0.7, f"F exact bucket p={p_f} unexpected"
-    # °F partition over a market's buckets sums ~1 (Atlanta scheme: <=69, 70-71,...,88+)
+    # °F partition sums ~1 (Atlanta scheme: <=69, 70-71,...,88+)
     f_buckets = [(None, 70), (70, 72), (72, 74), (74, 76), (76, 78), (78, 80),
                  (80, 82), (82, 84), (84, 86), (86, 88), (88, None)]
     s_f = sum(bucket_prob(80.0, 3.0, lo, hi, "F") for lo, hi in f_buckets)
     assert 0.999 <= s_f <= 1.001, f"F partition sum={s_f} not ~1"
-    # °C-native: display=round(C*9/5+32). mu=25C, sig=2. Partition over a C-station market
-    # (Buenos Aires scheme: <=11, 12,13,...,20, >=21) — but buckets are in DISPLAY unit (C here,
-    # since the venue displays C for C-native). Actually for C-native the display IS C, so buckets
-    # are integer C and the map is identity-ish. Test the empty-preimage case: an °F bucket like
-    # [87,88) (display) has NO integer °C preimage (86<-30C, 88<-31C; 87 unreachable).
-    p_empty = bucket_prob(25.0, 1.0, 87, 88, "C")
-    assert p_empty < 1e-6, f"empty-preimage °F bucket p={p_empty} should be ~0"
-    # C-native partition sums ~1 over integer-C buckets (display=C, identity map)
+    # °C-native, °C-display (the actual dataset case): direct integration. partition sums ~1.
     c_buckets = [(None, 12), (12, 13), (13, 14), (14, 15), (15, 16), (16, 17),
                  (17, 18), (18, 19), (19, 20), (20, 21), (21, None)]
     s_c = sum(bucket_prob(25.0, 3.0, lo, hi, "C") for lo, hi in c_buckets)
-    assert 0.999 <= s_c <= 1.001, f"C partition sum={s_c} not ~1"
-    print(f"[self-check] bucket_prob: F-partition sum={s_f:.4f}, C-partition sum={s_c:.4f}, "
-          f"empty-°F-preimage p={p_empty:.2e} OK")
+    assert 0.999 <= s_c <= 1.001, f"C direct partition sum={s_c} not ~1"
+    # °C-native, °F-display (defensive W3 case, not in dataset): empty-°F-preimage bucket
+    # [87,88) has NO integer °C preimage (30C->86F, 31C->88F; 87F unreachable) -> p~0.
+    p_empty = bucket_prob(25.0, 1.0, 87, 88, "C", display_unit="F")
+    assert p_empty < 1e-6, f"empty-preimage °F bucket p={p_empty} should be ~0"
+    # and a reachable °F bucket [86,88) maps to 30C -> p ~ P(round(X_C)=30)
+    p_reach = bucket_prob(30.0, 1.0, 86, 88, "C", display_unit="F")
+    assert p_reach > 0.3, f"reachable mapped bucket p={p_reach} too low"
+    print(f"[self-check] bucket_prob: F-sum={s_f:.4f} C-direct-sum={s_c:.4f} "
+          f"empty-°F-preimage={p_empty:.2e} reachable-mapped={p_reach:.3f} OK")
 
 
 def main():

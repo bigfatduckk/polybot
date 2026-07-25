@@ -135,7 +135,8 @@ def build_rows(conn, emos_params, oos_start):
         mu = float(X @ params[:7])
         sigma = max(float(np.exp(params[7] + params[8] * (r["run_change"] or 0.0))), 0.05)
         native = r["native_unit"] or ("C" if r["unit"] == "C" else "F")
-        p_model = emos.bucket_prob(mu, sigma, r["bucket_lo"], r["bucket_hi"], native)
+        display = r["unit"] or native
+        p_model = emos.bucket_prob(mu, sigma, r["bucket_lo"], r["bucket_hi"], native, display)
         if not (0.001 < p_model < 0.999):
             continue
         cluster = f"{r['icao']}|{r['event_date_local']}"
