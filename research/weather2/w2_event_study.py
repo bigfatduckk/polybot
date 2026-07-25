@@ -142,7 +142,7 @@ def main():
     # '>=X or higher' markets that resolved YES (the max actually crossed X)
     markets = conn.execute("""
         SELECT market_id, icao, event_date_local, tz_name, clob_token_id_yes,
-               bucket_lo, bucket_hi, resolved_yes
+               bucket_lo, bucket_hi, resolved_yes, unit
         FROM markets_map
         WHERE parse_status='ok' AND icao!='VHHH' AND clob_token_id_yes!=''
           AND event_date_local IS NOT NULL AND resolved_yes=1
