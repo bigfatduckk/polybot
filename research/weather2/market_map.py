@@ -37,11 +37,16 @@ MONTH_IDX = {m: i + 1 for i, m in enumerate(MONTHS)}
 
 TITLE_RE = re.compile(r"highest temperature in (.+?) on (.+)", re.I)
 SLUG_DATE_RE = re.compile(r"-on-([a-z]+)-(\d+)-(\d+)$")
-BUCKET_BELOW = re.compile(r"(-?\d+)°([CF])\s+or\s+below", re.I)
-BUCKET_ABOVE = re.compile(r"(-?\d+)°([CF])\s+or\s+higher", re.I)
-BUCKET_EXACT = re.compile(r"(-?\d+)°([CF])(?!\s+or)", re.I)
+BUCKET_BELOW = re.compile(r"(\d+)°([CF])\s+or\s+below", re.I)
+BUCKET_ABOVE = re.compile(r"(\d+)°([CF])\s+or\s+higher", re.I)
+BUCKET_BETWEEN = re.compile(r"between\s+(\d+)-(\d+)°([CF])", re.I)
+BUCKET_EXACT = re.compile(r"(\d+)°([CF])(?!\s+or)", re.I)
 STATION_RE = re.compile(r"recorded at the (.+?)(?:\.|,|$)", re.I)
-ICAO_RE = re.compile(r"wunderground\.com/history/daily/[^/]+/[^/]+/([A-Z]{4})", re.I)
+# ICAO = last 4-uppercase segment of the Wunderground URL. US URLs have an extra
+# state segment (/us/ga/atlanta/KATL) vs non-US (/ar/ezeiza/SAEZ); greedy .+ to the
+# last uppercase-4 handles both. No re.I: station slugs (atlanta, ezeiza) are lowercase
+# and must NOT be mistaken for an ICAO.
+ICAO_RE = re.compile(r"wunderground\.com/history/daily/.+/([A-Z]{4})\b")
 DEG_UNIT_RE = re.compile(r"in degrees (celsius|fahrenheit)", re.I)
 
 # City -> tz. config.CITIES (8 traded) + common US cities Polymarket covers.
@@ -96,6 +101,9 @@ def parse_bucket(question):
     m = BUCKET_ABOVE.search(question)
     if m:
         v = int(m.group(1)); return (v, None, m.group(2).upper())
+    m = BUCKET_BETWEEN.search(question)
+    if m:
+        lo, hi = int(m.group(1)), int(m.group(2)); return (lo, hi + 1, m.group(3).upper())
     m = BUCKET_EXACT.search(question)
     if m:
         v = int(m.group(1)); return (v, v + 1, m.group(2).upper())
@@ -268,21 +276,35 @@ def coverage_report(conn, sample_n=20):
 
 
 def selfcheck():
-    # parse_bucket correctness
+    # parse_bucket: °C 1-degree exact + below/above
     assert parse_bucket("Will the highest temperature in X be 11°C or below on Y?") == (None, 12, "C")
     assert parse_bucket("Will the highest temperature in X be 21°C or higher on Y?") == (21, None, "C")
     assert parse_bucket("Will the highest temperature in X be 12°C on Y?") == (12, 13, "C")
+    # °F 2-degree "between N-M" -> [N, M+1)
+    assert parse_bucket("Will the highest temperature in X be between 70-71°F on Y?") == (70, 72, "F")
     assert parse_bucket("Will the highest temperature in X be 90°F or higher on Y?") == (90, None, "F")
-    # bucket partition sums to full range (no gaps/overlaps) on a synthetic 11-bucket set
+    # °C partition: 1-degree, contiguous
     qs = ["11°C or below", "12°C", "13°C", "14°C", "15°C", "16°C", "17°C",
           "18°C", "19°C", "20°C", "21°C or higher"]
     bs = [parse_bucket(f"Will the highest temperature in X be {q} on Y?") for q in qs]
     assert bs[0][:2] == (None, 12) and bs[-1][:2] == (21, None)
-    for i in range(1, len(bs) - 1):
-        assert bs[i][0] == bs[i - 1][1] or (i == 1 and bs[0][1] == 12)  # contiguous
-    # exact must NOT match "or below"/"or higher"
-    assert parse_bucket("be 11°C or below") != (11, 12, "C")
-    print("[self-check] parse_bucket: below/above/exact + partition contiguity OK")
+    for i in range(1, len(bs)):
+        if bs[i][0] is not None and bs[i - 1][1] is not None:
+            assert bs[i][0] == bs[i - 1][1], (i, bs[i], bs[i - 1])
+    # °F partition: 2-degree "between", contiguous (Atlanta scheme)
+    qf = ["69°F or below", "between 70-71°F", "between 72-73°F", "between 74-75°F",
+          "between 76-77°F", "between 78-79°F", "between 80-81°F", "between 82-83°F",
+          "between 84-85°F", "between 86-87°F", "88°F or higher"]
+    bf = [parse_bucket(f"Will the highest temperature in X be {q} on Y?") for q in qf]
+    assert bf[0] == (None, 70, "F") and bf[1] == (70, 72, "F") and bf[-1] == (88, None, "F")
+    for i in range(1, len(bf)):
+        if bf[i][0] is not None and bf[i - 1][1] is not None:
+            assert bf[i][0] == bf[i - 1][1], (i, bf[i], bf[i - 1])
+    # ICAO: last uppercase-4 segment; US 4-seg + non-US 3-seg; lowercase slug excluded
+    assert ICAO_RE.search("https://www.wunderground.com/history/daily/us/ga/atlanta/KATL").group(1) == "KATL"
+    assert ICAO_RE.search("https://www.wunderground.com/history/daily/ar/ezeiza/SAEZ").group(1) == "SAEZ"
+    assert not ICAO_RE.search("https://www.wunderground.com/history/daily/us/ga/atlanta/")
+    print("[self-check] parse_bucket (°C 1-deg + °F 2-deg between + contiguity) + ICAO extraction OK")
 
 
 def main():
