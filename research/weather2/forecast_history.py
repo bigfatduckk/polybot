@@ -79,6 +79,7 @@ ICAO_COORDS_EXTRA = {
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=5000")  # concurrent-write safety (matches bot 2d350ca)
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS fcst_station_day (
             icao TEXT, date_local TEXT, fcst_max_d1 REAL, fcst_max_d2 REAL,

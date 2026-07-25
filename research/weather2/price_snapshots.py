@@ -34,6 +34,7 @@ PER_MARKET_SLEEP = 0.15
 def init_db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=5000")  # concurrent-write safety (matches bot 2d350ca)
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS price_snapshots (
             market_id TEXT PRIMARY KEY, snapshot_ts_utc TEXT, mid REAL, ok INTEGER, note TEXT
