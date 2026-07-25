@@ -83,16 +83,18 @@ Pilot (10 stations, inline) = 6/6; full 49-station ingest = 99.5% raw, 99.56% af
 exclusion below. The rounding chain (`whole-°C → round(C·9/5+32) → max`) is validated on real
 resolved °F markets (e.g. KLGA max_C=3.33 → °F=38, matched).
 
-### Exclusion: VHHH (Hong Kong) — different-station oracle class
+### Exclusion: VHHH (Hong Kong) — excluded, large systematic gap, cause UNESTABLISHED
 
 VHHH (Chek Lap Kok airport) is in the 'ok' set (Wunderground-linked URL), but its 4 resolved
 station-days in the join ALL mismatched: replica max = 23°C while the venue resolved the high at
-15-16°C (an 8° gap). This is the **HKO-HQ-Tsim-Sha-Tsui vs VHHH-Chek-Lap-Kok** gap from
-Exclusion 1 — the venue resolves Hong Kong on the Observatory's HQ reading, not the airport METAR,
-even when the resolutionSource URL points at a Wunderground airport page. **VHHH excluded from the
-gate and from W1 scope.** Same treatment as the manual set: reopening HK requires an oracle audit
-against the HKO HQ station. Confirmed VHHH is the *only* large-diff (|replica−venue| ≥ 5) outlier;
-no other station showed a different-station signature.
+15-16°C (an 8° gap). **The gap is too large to attribute confidently.** Tsim Sha Tsui (HKO HQ) vs
+Chek Lap Kok (VHHH) differ by ~1-3°C at most, not 8°C — so "different station" is *not* an
+established explanation. The likely causes (any of, not yet distinguished): wrong IEM station ID,
+a date/timezone offset, a unit mixup in the venue values, or the market resolving on a source the
+resolutionSource URL doesn't reflect. **VHHH excluded from the gate and from W1 scope; cause
+unestablished. A per-city audit is required before any HK market is ever in scope.** The exclusion
+contains the risk regardless of root cause. Confirmed VHHH is the *only* large-diff
+(|replica−venue| ≥ 5) outlier; no other station showed a comparable systematic gap.
 
 ### Residual mismatches (90, all small rounding-convention noise — NOT blocking)
 
