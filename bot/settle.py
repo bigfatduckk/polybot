@@ -12,10 +12,18 @@ def _connect():
     return conn
 
 
-def _fill_pnl(side, price, size, yes_won):
+def _fill_pnl(side, price, size, yes_won, fee_rate=0.0, fees_enabled=False):
+    # P4: price the taker fee into realized PnL. settle previously recomputed
+    # gross PnL from fill price/size and ignored the fee the edge calc had
+    # subtracted — realized PnL was an upper bound. Fee model matches the edge
+    # gate (_fee = fee_rate * p * (1-p)) so edge assumption and realized PnL use
+    # the same fee.
     if side == "buy":
-        return (1.0 - price) * size if yes_won else (-price) * size
-    return (price - 1.0) * size if yes_won else price * size
+        gross = (1.0 - price) * size if yes_won else (-price) * size
+    else:
+        gross = (price - 1.0) * size if yes_won else price * size
+    fee = fee_rate * price * (1.0 - price) * size if fees_enabled else 0.0
+    return gross - fee
 
 
 def _pending_markets(conn, edge):
@@ -39,6 +47,19 @@ def _fills_for(conn, edge, market_id):
         "SELECT id, side, price, size FROM pm_fills WHERE edge=? AND market_id=?",
         (edge, market_id),
     ).fetchall()
+
+
+def _market_fee(conn, edge, market_id):
+    # fee_rate is set at market creation and is stable; latest snapshot carries it.
+    row = conn.execute(
+        "SELECT fee_rate, fees_enabled FROM pm_snapshots "
+        "WHERE edge=? AND market_id=? AND fee_rate IS NOT NULL "
+        "ORDER BY id DESC LIMIT 1",
+        (edge, market_id),
+    ).fetchone()
+    if not row:
+        return 0.0, False
+    return float(row["fee_rate"] or 0.0), bool(row["fees_enabled"])
 
 
 def _store_settlement(conn, edge, market_id, condition_id, yes_won, pnl, meta):
@@ -66,8 +87,10 @@ def sweep_resolutions(edge):
         yes_won = outcome == "yes"
         pnl = 0.0
         n = 0
+        fee_rate, fees_enabled = _market_fee(conn, edge, r["market_id"])
         for f in _fills_for(conn, edge, r["market_id"]):
-            pnl += _fill_pnl(f["side"], f["price"], f["size"], yes_won)
+            pnl += _fill_pnl(f["side"], f["price"], f["size"], yes_won,
+                             fee_rate, fees_enabled)
             n += 1
         _store_settlement(conn, edge, r["market_id"], r["condition_id"], yes_won, pnl,
                           {"outcome": outcome, "prices": prices, "fills": n})

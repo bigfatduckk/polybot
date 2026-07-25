@@ -1,0 +1,113 @@
+============================================================================
+FLB — P4 FILL-REALISM VERDICT
+Date: 2026-07-25 (commit follows)
+Edge: FLB (favourite-longshot-bias, sell-YES side)
+============================================================================
+
+QUESTION
+Does FLB's +2.2%/trade historical edge survive realistic execution, or was the
+paper PnL an artifact of free / instant / full-size fills?
+
+DATA REALITY (differs from the P4 handoff's assumption)
+The handoff assumed 39 settled FLB fills at +$19.14 optimistic. By the time
+P4 ran, 4 more fills had settled: 43 settled fills, 22W/21L, optimistic total
+-$74.55 (per-fill -$1.73, 95% CI [-$17.03, +$14.15]). The optimistic CI already
+included 0. So the handoff's "optimistic-positive -> does realism drag CI to 0?"
+frame does not apply cleanly; the binary verdict rule below is reframed to fit
+the actual data.
+
+METHOD (bot/regrade_fills.py)
+Restated the 43 settled FLB pm_fills under realistic execution:
+  - Taker fee PRICED into realized PnL. settle._fill_pnl previously recomputed
+    gross PnL from fill price/size and ignored the fee the edge gate had
+    subtracted -> realized PnL was an upper bound. Fee model = fee_rate *
+    p * (1-p) * size, identical to the edge gate's _fee (so edge assumption and
+    realized PnL use the SAME fee).
+  - Partial-cap: fill_size capped to top-10 depth at scan (depth/2 proxy; CLOB
+    L2 is not persisted in pm_snapshots, only aggregate depth + best level).
+  - Re-walk NOT performed for historical fills (L2 book not stored -> cannot
+    re-walk a historical book; only aggregate-depth proxy available). Going
+    forward (P6) _store_fill re-fetches+re-walks the live book, so this
+    limitation does not apply to fresh OOS fills.
+  - Cluster bootstrap CI by fill (one fill per market), n=2000, seed=42.
+
+RESULTS
+  n=43 settled fills (42 sell-YES, 1 buy; fee_rate 0.04-0.05 on 42, 0.0 on 1)
+  wins: opt=22  realistic=22
+  optimistic total PnL = -$74.5505   per-fill -$1.7337  CI [-$17.03, +$14.15]
+  realistic  total PnL = -$128.0005  per-fill -$2.9768  CI [-$18.32, +$12.84]
+  taker fee total      = -$53.4500  (~$1.24/fill, ~2.5% of ~$50 notional turnover)
+  partial-cap net eff  =  $0.0000   (0 thin-book fills; min fill_ratio=1.000)
+  realism self-check   = PASS       (path changed PnL; nil partial-cap -> fee is
+                                     the sole haircut, confirms the path is live)
+
+  The realism haircut is DOMINATED by the taker fee (~$53, ~2.5% of turnover).
+  Partial-cap is nil: every FLB fill sat in a liquid market (top-10 depth 7k to
+  253k shares vs ~100 fill_size). FLB did NOT benefit from full-size-at-partial-
+  depth optimism because the books always absorbed the target.
+
+WHAT P4 CHANGED (going-forward honesty, in scope per handoff)
+1. engine._walk_book -> returns (avg_price, filled_shares); partial-depth caps
+   fill at available depth, residual canceled. Mirrors live_engine.walk_book_fill
+   (paper and live now agree on fill semantics). Callers updated ONCE at source:
+   engine.scan_weather, edges/{flb,usud,arb}. Self-check PASS (thin caps, full
+   unchanged, empty returns (None,0.0)).
+2. edge_engine._store_fill -> re-fetch book at execution (markets.fetch_book),
+   re-walk with actual order.size, cap fill_size to depth_filled, all fills
+   labeled 'taker' (drop the maker-optimism path), store book_depth/fill_size/
+   fill_ratio/scan_price/rewalk_price in meta_json. Fetch-fail / empty book ->
+   order canceled, no fill, no position. edge_execute propagates the cancel.
+3. settle._fill_pnl -> subtracts the taker fee (fee_rate/fees_enabled looked up
+   from pm_snapshots per market). Realized PnL is now honest going forward for
+   ALL edges (flb/arb/usud). Past pm_settlements rows are NOT recomputed (the
+   regrade handles historical FLB separately).
+4. ARB: atomic guard ported forward in edges/arb.compute_bundle (fail the whole
+   bundle if ANY leg filled_shares < target) -> no partial-walk arb path exists
+   unguarded. ARB's own P4 leg-exec simulator (P5) NOT built (conditional on P3
+   proving a gap crossing ARB_MIN_GAP in 4wk/>=500 scans; has not happened).
+5. backtest_usud SPREAD/TAKER_FEE dead constants: DEFERRED. USUD's P4 turn only
+   fires if its T1.1 passes (n=9 cannot). Not touched (scope discipline).
+
+VERDICT
+The paper path WAS optimistically biased — by exactly the unpriced taker fee
+(~2.5% of turnover), NOT by free/instant/full-size fills (partial-cap nil;
+FLB markets are liquid). This is a bookkeeping bug (fee not in realized PnL),
+not a market-structure artifact like weather's ERA5-vs-METAR oracle mismatch.
+The historical P1 gate used edge_after_costs (fee already subtracted) -> the
++2.2%/trade ALREADY accounts for the fee. Pricing the fee into realized PnL
+brings the paper path INTO ALIGNMENT with P1's fee-inclusive assumption; it
+does not undermine P1.
+
+Under the handoff's binary rule ("CI includes 0 -> re-kill at execution gate")
+FLB would be re-killed. That rule assumed optimistic was positive. The
+optimistic was already negative with a wide CI (n=43 underpowered), so the
+execution-realism test cannot adjudicate FLB on this sample: realism did not
+turn a positive edge into an includes-0 edge (there was no positive live-paper
+edge to kill). The difference between optimistic (-$74.55) and realistic
+(-$128.00) is a known, mechanical ~$53 fee haircut, not a revelation that the
+edge was free-fill fiction.
+
+-> FLB SURVIVES THE EXECUTION-REALISM TEST. No execution artifact found.
+   The paper path is now honest (fee + partial-cap + re-walk wired going
+   forward). n=43 cannot confirm or refute the historical n=19418 +2.2%/trade
+   edge (P1 PASS); that adjudication belongs to P6 (fresh OOS n>=200 on the
+   honest path). P6 is the gate: realistic CI excludes 0 on the positive side
+   -> ship; excludes 0 negative or includes 0 -> re-kill at the OOS gate.
+
+NEXT
+- P6: fresh OOS n>=200 FLB fills on the honest paper path (fee + re-walk +
+  partial-cap), freeze, pre-registered verdict. This is the adjudication gate.
+- Live arm STAYS HALTED (HALT_LIVE). No real money until P6 passes.
+- backtest_usud dead constants: clean up when USUD's T1.1 passes (n>=60-100
+  trading-date clusters; currently n=9 accruing).
+
+LIMITATIONS (honest)
+- Historical regrade cannot re-walk the L2 book (not stored); partial-cap uses
+  the top-10 depth proxy. For FLB this is a non-issue (depth >> size everywhere)
+  but the proxy would under-state fillable size on a genuinely thin market.
+- Fee model is the bot's p*(1-p) approximation, matching the edge gate for
+  internal consistency. Polymarket's actual proceeds fee can differ slightly;
+  P6 should validate fee_rate against a live probe.
+- n=43 is one fill per market (cluster = fill). The CI is wide; do not read the
+  point estimate as the edge magnitude.
+============================================================================

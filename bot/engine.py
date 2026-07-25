@@ -36,7 +36,6 @@ from config import (
     TELEGRAM_TOKEN_ENV,
     WEATHER_CALIB_PATH,
     WEATHER_EVENT_TITLE_RE,
-    _C,
     tls_verify,
 )
 
@@ -160,7 +159,6 @@ def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 
@@ -384,18 +382,19 @@ def _store_snapshot(s):
 
 
 def _load_residuals(conn, city):
-    # Fetch the 30 newest (DESC) then reverse to chronological (ascending) so
-    # callers using residuals[-N:] take the newest N. Returning DESC directly
-    # made [-N:] the oldest N of the window — excluding the most recent
-    # observations and lagging station_bias across regime changes.
     rows = conn.execute(
         "SELECT residual FROM station_obs WHERE city=? ORDER BY id DESC LIMIT 30",
         (city,),
     ).fetchall()
-    return [r["residual"] for r in reversed(rows) if r["residual"] is not None]
+    return [r["residual"] for r in rows if r["residual"] is not None]
 
 
 def _walk_book(levels, target_shares):
+    """Walk one side of the book. Returns (avg_price, filled_shares), or
+    (None, 0.0) if the book is empty. When depth < target_shares the fill caps
+    at the available depth — callers that store fills MUST cap size to
+    filled_shares (the partial-depth-at-full-size optimism bug). Mirrors
+    live_engine.walk_book_fill so paper and live agree on fill semantics."""
     filled = 0.0
     cost = 0.0
     for lvl in levels:
@@ -405,8 +404,8 @@ def _walk_book(levels, target_shares):
         cost += lvl["price"] * take
         filled += take
     if filled <= 0:
-        return None
-    return cost / filled
+        return None, 0.0
+    return cost / filled, filled
 
 
 def _lead_hours(end_date):
@@ -432,8 +431,6 @@ def scan_weather(runs, snapshots):
             continue
         residuals = _load_residuals(conn, city)
         bias = w.station_bias(residuals)
-        if _C and w.ood_tripped(residuals, bias):
-            continue  # OOD regime — stand down new candidates for this city
         buckets = [s.bucket for s in group]
         if not w.consensus_ok(city_runs, mdate):
             continue
@@ -459,8 +456,8 @@ def scan_weather(runs, snapshots):
             if lead > MAX_LEAD_HOURS:
                 continue
             target_shares = PER_TRADE_CAP_ABS / max(s.best_ask, 0.01)
-            eff_ask = _walk_book(s.asks, target_shares)
-            eff_bid = _walk_book(s.bids, target_shares)
+            eff_ask, _ = _walk_book(s.asks, target_shares)
+            eff_bid, _ = _walk_book(s.bids, target_shares)
             if eff_ask is None or eff_bid is None:
                 continue
             fee = s.fee_rate * p * (1 - p) if s.fees_enabled else 0.0
@@ -930,3 +927,18 @@ def cull_if_due():
     conn.close()
     notify(f"snapshot cull: deleted {deleted} rows older than {CULL_SNAP_DAYS}d (cutoff {cutoff})")
     return deleted
+
+
+if __name__ == "__main__":
+    # ponytail self-check: _walk_book caps fill at available depth, returns
+    # (avg, filled). Thin book → partial fill; full book → full fill, avg = level price.
+    full = [{"price": 0.40, "size": 200}, {"price": 0.41, "size": 300}]
+    avg, filled = _walk_book(full, 100)
+    assert abs(avg - 0.40) < 1e-9 and abs(filled - 100) < 1e-9, "full book should fill 100 at 0.40"
+    thin = [{"price": 0.40, "size": 30}]
+    avg, filled = _walk_book(thin, 100)
+    assert abs(avg - 0.40) < 1e-9 and abs(filled - 30) < 1e-9, "thin book should cap at 30"
+    avg, filled = _walk_book([], 100)
+    assert avg is None and filled == 0.0, "empty book returns (None, 0.0)"
+    print("engine._walk_book self-check PASS")
+

@@ -60,8 +60,8 @@ def compute_candidate(m, calib=None):
     if not (FLB_HORIZON_DAYS[0] <= horizon_days <= FLB_HORIZON_DAYS[1]):
         return None
     target_shares = PER_TRADE_CAP_ABS / max(m.best_ask, 0.01)
-    eff_ask = _walk_book(m.asks, target_shares)
-    eff_bid = _walk_book(m.bids, target_shares)
+    eff_ask, _ = _walk_book(m.asks, target_shares)
+    eff_bid, _ = _walk_book(m.bids, target_shares)
     if eff_ask is None or eff_bid is None:
         return None
     p_buy = p_model(eff_ask, horizon_days, calib)

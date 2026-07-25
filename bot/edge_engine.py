@@ -4,6 +4,8 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+import markets
+from engine import _walk_book
 from config import (
     CONSECUTIVE_LOSS_HALT,
     DAILY_LOSS_HALT_FRAC,
@@ -132,10 +134,9 @@ def edge_propose(candidates, state):
         if notional <= 0.0:
             continue
         shares = notional / q
-        maker = (c["edge_after_costs"] >= MIN_EDGE + 0.02 and c.get("horizon_days", 0) > 0.25)
         orders.append(EdgeOrder(
             edge=state.edge, market_id=c["market_id"], token_id=c["token_id"],
-            side=side, price=q, size=shares, maker_or_taker=("maker" if maker else "taker"),
+            side=side, price=q, size=shares, maker_or_taker="taker",
             edge_size=c["edge_after_costs"], kelly_fraction=f * 4,
             meta={"notional": notional, "scan_id": c.get("scan_id")},
         ))
@@ -175,15 +176,41 @@ def _store_order(conn, order):
 
 
 def _store_fill(conn, order_id, order, pnl=0.0):
+    # Realistic paper fill (P4): re-fetch the book at execution, re-walk with
+    # the actual order.size, cap fill_size to the depth the book absorbed
+    # (residual CANCELED — kills the full-size-at-partial-depth optimism), and
+    # label every paper fill 'taker' (maker price + no taker fee was double
+    # optimism). Fetch-fail / empty book → order canceled, no fill, no position.
+    book = markets.fetch_book(order.token_id)
+    if not book:
+        conn.execute("UPDATE pm_orders SET status='canceled' WHERE id=?", (order_id,))
+        conn.commit()
+        return None
+    bids, asks = markets._parse_book(book)[:2]
+    levels = asks if order.side == "buy" else bids
+    avg, depth_filled = _walk_book(levels, order.size)
+    if avg is None or depth_filled <= 0:
+        conn.execute("UPDATE pm_orders SET status='canceled' WHERE id=?", (order_id,))
+        conn.commit()
+        return None
+    fill_size = min(order.size, depth_filled)
+    meta = {
+        "synthetic_short": order.side == "sell",
+        "scan_price": order.price, "fill_price": avg,
+        "req_size": order.size, "fill_size": fill_size,
+        "book_depth": depth_filled, "target_shares": order.size,
+        "fill_ratio": fill_size / order.size if order.size > 0 else 0.0,
+    }
     conn.execute(
         """INSERT INTO pm_fills(ts, edge, order_id, market_id, token_id, side, price, size,
            maker_or_taker, fill_ts, pnl, meta_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
         (_now_iso(), order.edge, order_id, order.market_id, order.token_id, order.side,
-         order.price, order.size, order.maker_or_taker, _now_iso(), pnl,
-         json.dumps({"synthetic_short": order.side == "sell"}, default=str)),
+         avg, fill_size, "taker", _now_iso(), pnl,
+         json.dumps(meta, default=str)),
     )
     conn.execute("UPDATE pm_orders SET status='filled' WHERE id=?", (order_id,))
     conn.commit()
+    return order_id
 
 
 def edge_execute(order, verdict):
@@ -193,9 +220,9 @@ def edge_execute(order, verdict):
         raise NotImplementedError("real execution is Milestone 4")
     conn = _connect()
     order_id = _store_order(conn, order)
-    _store_fill(conn, order_id, order)
+    fill_id = _store_fill(conn, order_id, order)
     conn.close()
-    return order_id
+    return fill_id
 
 
 def _new_scan(edge):

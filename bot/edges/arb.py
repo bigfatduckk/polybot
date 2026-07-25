@@ -41,24 +41,30 @@ def compute_bundle(siblings, event_id=""):
     bundles = []
     if _has_depth(elig, "buy"):
         shares = min(min_depth, cap_shares)
-        effs = [_walk_book(m.asks, shares) for m in elig]
-        if all(e is not None for e in effs):
-            sum_eff = sum(effs)
-            fees = sum(_fee(m, e) for m, e in zip(elig, effs))
-            gap = 1.0 - sum_eff
-            net = gap - fees
-            bundles.append(_bundle(event_id, "buy", elig, effs, shares,
-                                   sum_eff, gap, net, min_depth))
+        walked = [_walk_book(m.asks, shares) for m in elig]
+        if all(w is not None for w in walked):
+            effs = [w[0] for w in walked]
+            # Atomic guard: a multi-leg bundle cannot partially fill — if any leg's
+            # book can't absorb `shares`, the whole bundle is unexecutable.
+            if all(w[1] >= shares - 1e-6 for w in walked):
+                sum_eff = sum(effs)
+                fees = sum(_fee(m, e) for m, e in zip(elig, effs))
+                gap = 1.0 - sum_eff
+                net = gap - fees
+                bundles.append(_bundle(event_id, "buy", elig, effs, shares,
+                                       sum_eff, gap, net, min_depth))
     if _has_depth(elig, "sell"):
         shares = min(min_depth_bid, cap_shares)
-        effs = [_walk_book(m.bids, shares) for m in elig]
-        if all(e is not None for e in effs):
-            sum_eff = sum(effs)
-            fees = sum(_fee(m, e) for m, e in zip(elig, effs))
-            gap = sum_eff - 1.0
-            net = gap - fees
-            bundles.append(_bundle(event_id, "sell", elig, effs, shares,
-                                   sum_eff, gap, net, min_depth_bid))
+        walked = [_walk_book(m.bids, shares) for m in elig]
+        if all(w is not None for w in walked):
+            effs = [w[0] for w in walked]
+            if all(w[1] >= shares - 1e-6 for w in walked):
+                sum_eff = sum(effs)
+                fees = sum(_fee(m, e) for m, e in zip(elig, effs))
+                gap = sum_eff - 1.0
+                net = gap - fees
+                bundles.append(_bundle(event_id, "sell", elig, effs, shares,
+                                       sum_eff, gap, net, min_depth_bid))
     if not bundles:
         return None
     return max(bundles, key=lambda b: b["net_gap"])

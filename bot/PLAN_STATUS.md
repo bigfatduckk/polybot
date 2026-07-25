@@ -69,3 +69,28 @@ CRITICAL FIX: paper edge crons (job_flb/job_arb/job_usud) were HALTed by HALT_LI
 
 DEFERRED (supervised): P4 fill-realism floor (engine._walk_book -> (avg,filled_shares); edge_engine._store_fill re-walk+taker fee+partial-cap; backtest_usud apply SPREAD/TAKER_FEE) — only for survivors (FLB, USUD-if-T1.1-passes), big shared change. P6 full pre-registered OOS gate + live un-HALT.
 Live arm STAYS HALTED (HALT_LIVE). No real money until an edge passes its full gate OOS AND fill-realism survives.
+
+## P4 FILL-REALISM FLOOR — DONE 2026-07-25 (bot/FLB_P4_VERDICT.txt)
+FLB (the survivor). Restated 43 settled FLB pm_fills under realistic execution (bot/regrade_fills.py).
+- Taker fee PRICED into realized PnL (settle._fill_pnl previously ignored it — the optimism bug). Fee = fee_rate * p*(1-p) * size (matches edge gate _fee).
+- Partial-cap: fill_size capped to top-10 depth at scan (depth/2; L2 not stored). NIL for FLB — every fill sat in a liquid market (top-10 depth 7k-253k vs ~100 fill_size; 0 thin-book fills, min fill_ratio=1.000).
+- Re-walk NOT done for historical fills (L2 not persisted); going forward _store_fill re-fetches+re-walks (applies to P6 fresh OOS).
+
+RESULTS (n=43 settled; 42 sell-YES + 1 buy; 22W):
+- optimistic total PnL = -$74.5505  per-fill -$1.73 CI [-$17.03, +$14.15]  (handoff assumed +$19.14 — STALE; 4 more fills settled since, dragged it negative; opt CI already included 0)
+- realistic  total PnL = -$128.0005 per-fill -$2.98 CI [-$18.32, +$12.84]
+- taker fee total = -$53.45 (~$1.24/fill, ~2.5% of turnover) — DOMINANT haircut; partial-cap net eff = $0.00
+- realism self-check PASS (path changed PnL; nil partial-cap -> fee is sole haircut)
+
+VERDICT: FLB SURVIVES the execution-realism test. No execution artifact. The paper path was optimistic by exactly the unpriced taker fee (~2.5%, a bookkeeping bug, not free-fill fiction — partial-cap nil; FLB markets liquid). The historical P1 gate used edge_after_costs (fee already subtracted) so +2.2%/trade ALREADY accounts for the fee; pricing it brings the paper path INTO ALIGNMENT with P1, does not undermine it. n=43 underpowered (CI wide, opt already negative+includes-0) -> cannot adjudicate the historical n=19418 edge either way. Realism did not kill a positive edge (there was no positive live-paper edge to kill). -> No re-kill on execution grounds. P6 (fresh OOS n>=200 on the honest path) is the adjudication gate.
+
+CODE (going-forward honesty, all in scope):
+1. engine._walk_book -> returns (avg, filled_shares); partial-depth caps fill (mirrors live_engine.walk_book_fill). Callers updated at source: engine.scan_weather, edges/{flb,usud,arb}. __main__ self-check PASS.
+2. edge_engine._store_fill -> re-fetch book (markets.fetch_book), re-walk order.size, cap fill_size, all-taker (drop maker-optimism), store book_depth/fill_size/fill_ratio in meta_json. Fetch-fail/empty -> order canceled, no fill. edge_execute propagates cancel.
+3. settle._fill_pnl -> subtracts taker fee (fee_rate/fees_enabled from pm_snapshots). Honest realized PnL going forward for ALL edges. Past settlements NOT recomputed (regrade handles historical FLB).
+4. ARB atomic guard ported in edges/arb.compute_bundle (fail bundle if any leg filled < target). ARB P5 leg-exec NOT built (conditional on P3 gap crossing; not happened).
+5. backtest_usud SPREAD/TAKER_FEE dead constants: DEFERRED (USUD P4 only if T1.1 passes; n=9 cannot).
+
+TESTS: test_edges.py = 38 pass, 2 fail (test_arb_no_bundle_at_parity + test_usud_prob_above_zero_sigma_is_step_function). BOTH PRE-EXISTING on HEAD 70843a2 (verified via git stash) — not caused by P4. No P4-introduced regressions.
+
+Live arm STAYS HALTED (HALT_LIVE). P6 = fresh OOS n>=200 on honest path + freeze + pre-registered verdict = the adjudication gate.
