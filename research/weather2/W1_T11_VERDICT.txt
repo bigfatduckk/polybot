@@ -1,0 +1,103 @@
+W1 T1.1 VERDICT — 2026-07-25 (CORRECTED 2026-07-26 per Fable-5 independent assessment)
+=====================================================================================
+
+N=7019 rows, 1787 city-date clusters (OOS 2025-10-01 -> 2026-06-30).
+Outcome = venue resolution (markets_map.resolved_yes). NEVER the replica.
+
+CONTROL 1 (met-skill): PASS — 48/48 stations, EMOS CRPS beats raw GFS on held-out
+met year (2024-10 -> 2025-09). Genuine meteorological skill. (Median PIT maxdev 0.42 —
+severe distributional miscalibration, but the coefficient survives it; see validity notes.)
+
+STATISTICAL GATE: PASS, strongly.
+  Pooled:   logit(p_model_w1) coef +0.1823, p=0.0000  (logit(snapshot_mid) +1.0086)
+  Non-US:   logit(p_model_w1) coef +0.2153, p=0.0000  (stricter p<0.01, N=5128/1282 clusters)
+
+ECONOMIC GATE: FAIL.
+  n_trades=4440, mean per-trade PnL -0.0205, 95% CI [-0.0345, -0.0067].
+  CI excludes 0 on the NEGATIVE side.
+
+GATE (SURVIVE = BOTH stat AND econ): FAIL.
+
+=====================================================================================
+VERDICT: W1 KILLED ON THE ECONOMIC GATE — real-but-sub-cost signal.
+=====================================================================================
+
+CHARACTERIZATION (corrected — the original "falsification: market embeds post-
+processing" label was WRONG and is withdrawn):
+
+The pre-reg's falsification clause anticipated a NO-SIGNAL failure: "EMOS has skill
+BUT coef <= 0 OR p >= 0.05 -> market already embeds station post-processing -> class
+closed permanently, no recalibration appeal." THAT MECHANISM DID NOT FIRE. The
+statistical gate passed strongly (coef +0.18 @ p=0.0000) — the opposite of the
+original weather kill (D-4: coef -0.069, p=0.47). The market does NOT fully embed
+station post-processing; there is a genuine residual signal beyond price.
+
+What failed is the ECONOMIC gate: the signal is real but too small to clear trading
+costs. This is a different, narrower closure than the pre-reg anticipated — economic,
+not epistemic.
+
+THE COHERENCE CHECK (load-bearing): the two gates are the same finding viewed twice.
+The regression says the market shrinks the model's disagreement to ~18% of face value
+(coef 0.182 on logit(p_model) vs 1.01 on price). A 6¢ divergence at mid~0.5 is ~0.24
+logit units; 0.18 x 0.24 x 0.25 ~= 1.1¢ of true edge per 6¢ face divergence. Costs
+are ~2¢ half-spread + ~0.5-1¢ fee ~= 2.5-3¢. Predicted PnL ~= 1.1 - 2.75 ~= -1.7¢/trade,
+vs measured -2.05¢ (CI [-3.45,-0.67]). The economic gate is not miscalibrated; it is
+confirming the coefficient. (The pre-registered 6¢ raw-divergence rule was a strawman
+execution — the regression's own coef says shrink 5x -> ~14-17¢ threshold — but that
+does not rescue W1: fat-tail model error concentrates at large divergences, and their
+frequency is tiny. See posterior-gap readout.)
+
+=====================================================================================
+SCOPE OF CLOSURE
+=====================================================================================
+
+W1: DEAD. No appeal on this data. The class-wide "closed permanently, all angles"
+label is WITHDRAWN — it was contractually tied to the no-signal mechanism, which did
+not fire. W1's closure is economic and its permanence is CONDITIONAL on the cost
+structure.
+
+W2 (final-hours nowcast): NOT CLOSED by this result. The inheritance clause that would
+have killed W2-W4 by descent did not trigger. W2 has its own pre-registered gates
+(M1 late-trading >=20%, M2 event-study kill thresholds), was never run, and its premise
+(prices are sloppy against published facts) is if anything mildly supported by a market
+that impounds only ~82% of what a 9-param public-data model knows. M1 is nearly free
+(late_trading table already built, Task 0.3). See W2_M1 check.
+
+W3 (rounding): folded into W1 as a correctness layer; no standalone verdict.
+W4 (sampling deficit): killed at plan stage (absorbed into W1's training target).
+
+=====================================================================================
+REOPENING CONDITIONS FOR W1 (narrow, concrete — none to be built now)
+=====================================================================================
+
+W1 reopens ONLY under a changed cost structure or a materially stronger model, tested
+via a NEW pre-registered test on unexploited data (not a re-run of this test):
+  (a) venue fee -> 0 (even at zero fee, mean ~= -1¢, still likely CI-negative — so fee
+      alone does not rescue; needs (b) or (c) too);
+  (b) maker execution with MEASURED adverse selection (paper cannot price adverse
+      selection on resting orders in books patrolled by METAR-watchers — refuse any
+      maker appeal without live risk);
+  (c) a model whose coefficient approaches 1 (the market would then not be discounting
+      the signal 5x) — a different model class, pre-registered, run once on fresh data.
+
+Re-running threshold variants (try 10¢, try 15¢) on THIS data = p-hacking, forbidden.
+
+=====================================================================================
+VALIDITY NOTES (discount even the statistical pass slightly; both point same direction)
+=====================================================================================
+
+1. PIT maxdev 0.42 (median) is severe miscalibration of the predictive distribution.
+   The logistic regression absorbs affine logit miscalibration so the coefficient
+   survives, but the raw-divergence trade rule inherited the noise. A signal this
+   discounted by the market is fragile.
+2. Stale-quote contamination: the 00:00-local snapshot "mid" is probably last-trade,
+   not a firm quote, so entry = mid +/- 2¢ is optimistic on thin books. Real execution
+   would be WORSE, which strengthens the economic fail. Part of the +0.18 may be
+   "predicting" quote updates nobody could reliably capture at firm prices.
+
+=> The true monetizable signal is AT MOST what was measured. The +0.18 is real as
+   information; the -2% is real as economics; they agree with each other.
+
+=====================================================================================
+STOP-GATE: human review. Phase 2 NOT entered. Live arm STAYS HALTED.
+=====================================================================================
