@@ -54,6 +54,10 @@ TRAIN_END = "2025-09-30"  # pre-reg: training window <= 2025-09-30 ONLY
 # ICAO -> lat/lon. config.CITIES has 8 (traded); the other 41 come from station_day_max.
 # Build from markets_map station + a static ICAO->coord table for the rest.
 ICAO_COORDS_EXTRA = {
+    # the 8 config.CITIES traded stations (coords from config.CITIES, keyed by ICAO here)
+    "SAEZ": (-34.82, -58.54), "RKSI": (37.46, 126.44), "NZWN": (-41.29, 174.80),
+    "EGLC": (51.505, -0.056), "LTAC": (40.13, 32.99), "CYYZ": (43.68, -79.61),
+    "RJTT": (35.55, 139.78), "VHHH": (22.32, 114.17),
     "KLGA": (40.64, -73.78), "KATL": (33.64, -84.43), "KDAL": (32.85, -96.85),
     "KSEA": (47.45, -122.31), "KMIA": (25.79, -80.29), "KORD": (41.98, -87.90),
     "KAUS": (30.19, -97.67), "KBKF": (39.72, -104.75), "KHOU": (29.65, -95.28),
@@ -66,7 +70,7 @@ ICAO_COORDS_EXTRA = {
     "FACT": (-33.97, 18.60), "OPKC": (24.90, 67.13),
     "RKPK": (35.18, 128.94), "RCSS": (25.07, 121.55), "WSSS": (1.36, 103.99),
     "WMKK": (2.75, 101.70), "WIHH": (-6.27, 106.89), "MPMG": (14.51, 121.02),
-    "RPLL": (14.51, 121.02), "VHHH": (22.31, 113.91),
+    "RPLL": (14.51, 121.02),
     "ZSPD": (31.14, 121.81), "ZBAA": (40.08, 116.58), "ZHHH": (30.78, 114.21),
     "ZUCK": (29.72, 106.64), "ZGSZ": (22.64, 113.81), "ZUUU": (30.58, 103.95),
     "ZGGG": (23.39, 113.30), "VILK": (26.76, 80.89),
