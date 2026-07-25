@@ -201,6 +201,7 @@ def validate(conn, sample_n=None):
     n_agree = 0
     n_method_disagree = 0
     mismatches = []
+    all_rows = []
     units_seen = {}
     icaos_seen = set()
     non_us_seen = set()
@@ -219,6 +220,7 @@ def validate(conn, sample_n=None):
         if not icao.startswith(US_PREFIX):
             non_us_seen.add(icao)
         units_seen[unit] = units_seen.get(unit, 0) + 1
+        all_rows.append((icao, date, unit, rmax_int, lo, hi, vres, replica_yes, agree))
         if not agree:
             mismatches.append((icao, date, unit, lo, hi, vres, rmax_int, convmax, each, am, qtxt))
     pct = 100.0 * n_agree / n_total if n_total else 0.0
@@ -228,17 +230,16 @@ def validate(conn, sample_n=None):
     print(f"units: {units_seen}")
     print(f"method-disagree (convmax != each) station-days: {n_method_disagree}")
     print(f"mismatches: {len(mismatches)}")
-    # store validation rows
+    # store ALL validation rows (agree + mismatch) so the table is auditable, not mismatch-only
     conn.execute("DELETE FROM oracle_validation")
     conn.executemany(
         """INSERT INTO oracle_validation
         (icao, date_local, unit, replica_max_display, bucket_lo, bucket_hi,
          venue_resolved_yes, replica_yes, agree, mismatch_note)
         VALUES (?,?,?,?,?,?,?,?,?,?)""",
-        [(m[0], m[1], m[2], m[6], m[3], m[4], m[5], 1 if (m[3] is None or m[6]>=m[3]) and (m[4] is None or m[6]<m[4]) else 0,
-          1 if (1 if (m[3] is None or m[6]>=m[3]) and (m[4] is None or m[6]<m[4]) else 0)==m[5] else 0,
-          "" if (1 if (m[3] is None or m[6]>=m[3]) and (m[4] is None or m[6]<m[4]) else 0)==m[5] else "MISMATCH")
-         for m in mismatches],
+        [(r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8],
+          "" if r[8] else "MISMATCH")
+         for r in all_rows],
     )
     conn.commit()
     # gate check
