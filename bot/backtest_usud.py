@@ -5,8 +5,7 @@ from collections import defaultdict
 
 from config import DB_PATH, USUD_MIN_EDGE
 
-SPREAD = 0.05
-TAKER_FEE = 0.04
+TAKER_FEE = 0.04  # ponytail: flat conservative rate (actual ~0.02/market); exactness needs fee_rate stored in usud_quotes
 
 
 def _connect():
@@ -41,8 +40,10 @@ def _bootstrap_ci(values, n=1000, seed=42):
 
 def _trade_pnl(side, entry, size, yes_won):
     if side == "buy":
-        return ((1.0 - entry) * size) if yes_won else (-entry * size)
-    return ((entry - 1.0) * size) if yes_won else (entry * size)
+        gross = ((1.0 - entry) * size) if yes_won else (-entry * size)
+    else:
+        gross = ((entry - 1.0) * size) if yes_won else (entry * size)
+    return gross - TAKER_FEE * entry * (1.0 - entry) * size
 
 
 def _sim(rows, threshold, kelly_frac, bankroll=1000.0, per_trade_cap=50.0):
@@ -141,7 +142,8 @@ def main():
         rel_s = f"{rel*100:.1f}pp" if rel is not None else "n/a"
         print(f"  {th:6.2f} {sim['n']:5d} {sim['win_rate']*100:5.1f} "
               f"{(p or 0):+.4f} {ci:>17} {sim['max_drawdown']*100:6.1f} {rel_s:>7}")
-    print(f"\n  kelly={args.kelly}  bankroll={args.bankroll}  spread={SPREAD}  taker_fee={TAKER_FEE}")
+    print(f"\n  kelly={args.kelly}  bankroll={args.bankroll}  taker_fee={TAKER_FEE} "
+          f"(applied to PnL: fee=taker_fee*entry*(1-entry)*size; spread/depth already in walked entry)")
     print("  PASS = mean PnL CI excludes 0 + reliability <=10pp on >=6wk data")
 
 

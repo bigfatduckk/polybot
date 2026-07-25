@@ -1,0 +1,57 @@
+USUD T1.1 VERDICT — 2026-07-25
+==============================
+Script: bot/usud_t11.py (run on VPS /root/polybot, .venv/bin/python, DB polymarket_bot.db)
+Frame:  outcome ~ logit(entry_price) + logit(p_model), cluster-robust SE by trading_date
+        (mirrors weather D-4 gate in bot/test_model_signal.py; p_model = N(d2) binary-call
+        from spot/realized-vol/prior-close per edges/usud.py:prob_above)
+
+RESULT (first-scan entry per market, settled only):
+  N = 12 rows, 4 trading_date clusters   (gate requires N>=200, clusters>=60)
+  logit(entry_price): coef +6.0333, p=0.223   (market price informative; non-significant at n=12)
+  logit(p_model):     coef -0.7440, p=0.6729  (wrong sign, non-significant)
+  95% CI on p_model coef: [-4.198, +2.710]
+  corr(logit_pmodel, logit_entry) = 0.9216
+  tickers: DJIA, NVDA, SPX, SPY, TSLA
+
+VERDICT: INCONCLUSIVE — UNDERPOWERED (NOT a kill, NOT a pass)
+  - N=12 / 4 clusters is ~17x below the 200/60 gate. The coef CI spans [-4.2, +2.7]; a point
+    estimate of -0.74 @ p=0.67 is statistically consistent with a small true positive, zero,
+    OR negative. Cannot decide.
+  - The script's "EARLY-KILL" label is the sub-threshold weak signal only; it explicitly does
+    NOT unblock and is not trusted at n=12. Weather's decisive kill ran at N=217 / 66 clusters.
+  - Accrual-bound: USUD paper cron (Mon-Fri 15:00+19:00 UTC) running since 07-18 deploy;
+    ~12 settled market-days accrued over 5 trading days. Reaching 60 clusters (trading days)
+    takes ~12 weeks — same timescale as FLB P6. Rerun usud_t11.py at the gate.
+
+STRUCTURAL FLAG (recorded, not a kill):
+  corr(p_model, entry) = 0.92 vs weather's 0.24. p_model and market price are near-collinear
+  because BOTH derive from spot/IV (model = N(d2) on realized vol; market prices off implied
+  vol). The edge hypothesis (RV-vs-IV mispricing) leaves little residual for the model to add
+  beyond price. Even at full N, detection is harder than weather. Does not pre-kill — the
+  residual (RV vs IV) IS the actual signal — but it lowers the prior.
+
+ORACLE: validated (usud_oracle_audit.py, prior run) — Polymarket resolves on official regular-
+  session close (16:00 ET = 20:00 UTC in EDT); Yahoo chartPreviousClose matches the stated prior
+  close; NOT DOA. end_date = 20:00 UTC. No oracle mismatch (unlike weather's ERA5/METAR split),
+  so a T1.1 verdict here is not confounded by a grading oracle bug.
+
+COST-REALISM FIX (this session): bot/backtest_usud.py _trade_pnl was gross of fee — the P4 fee
+  bug in embryo (the edge gate subtracts _fee = fee_rate*p*(1-p) but realized PnL didn't, so
+  backtest PnL was an upper bound). FIXED: subtract TAKER_FEE*entry*(1-entry)*size, matching
+  settle._fill_pnl exactly (fee = fee_rate*price*(1-price)*size). SPREAD constant deleted —
+  it would double-count, because usud_quotes.market_ask/market_bid are _walk_book effective
+  prices (edges/usud.py:82-84,138), so depth/spread is already priced in the entry. Backtest
+  not rerun (N=12 -> pointless; rerun at gate). NOTE: TAKER_FEE=0.04 is a conservative flat
+  rate (actual ~0.02/market); exactness needs fee_rate stored per-market in usud_quotes (follow-up).
+
+GATE CRITERION (pre-existing, unchanged): coef(logit p_model) > 0 AND cluster-p < 0.10 at
+  N>=200 / clusters>=60 -> PASS (proceed to fill-realism). Otherwise KILL.
+
+NEXT: accrue to gate (~12 weeks), rerun usud_t11.py. Live arm STAYS HALTED (HALT_LIVE
+  07-24 15:26 UTC); no live USUD code path exists. Does NOT block weather Phase 0 / fan-out.
+
+What was NOT done: backtest_usud.py not rerun (N=12); fee_rate-per-market exactness deferred;
+USUD tooling (usud_t11.py, usud_oracle_audit.py, backtest_usud.py) remains UNTRACKED in git
+(created on VPS 07-18..07-24, never committed) — hygiene debt, flag for a commit pass; VPS
+copy of backtest_usud.py not yet synced with the fee fix (offline analysis script, not a cron
+path — sync before the gate rerun in ~12 weeks).
