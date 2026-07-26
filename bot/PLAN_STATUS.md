@@ -152,3 +152,19 @@ VERDICT: KILL W2 — BOTH pre-reg conditions fired:
   Depth gate unenforced (prices-history has no trade sizes) — 4.7/month is optimistic; kill robust.
 
 WEATHER CLASS FULLY CLOSED: W1 (econ) + W2 (execution, here) + W3 (folded into W1) + W4 (plan-stage kill). No live path ever created. Permanent infra retained (oracle/market_map/T1.1/snapshots/EMOS) — reusable for any station-resolved class. Reopens ONLY with genuinely new info source (sub-hourly proprietary nowcast) or cost-structure change (W1) — NOT recalibration, NOT faster cron (W2 windows unreachable). Live arm STAYS HALTED. ~7h of 30h budget used.
+
+## P6 — FLB fresh-OOS verdict harness + path-stability freeze — 2026-07-26 (commit 5ec9f56)
+Fable-5 P6 directive executed. Harness pre-registered BEFORE P6 data arrives (post-c44aede accrual at n=0; freeze fires at n>=200). At freeze: run one script, read one file (bot/FLB_P6_VERDICT.txt).
+
+**Harness: bot/flb_p6_verdict.py** (polybot 5ec9f56, pushed). Implements the locked rules verbatim from "P6 FLB OOS Pre-Registration 2026-07-25.md" (c44aede):
+- PRIMARY: realistic-fill realized PnL per fill (fee+partial-cap; honest path re-walked+cap+taker for post-c44aede fills), cluster-bootstrap by market_id (markets w/ multiple legs aggregated), n_resample=2000 seed=42. SHIP iff mean>0 AND 95% CI lower bound>0; else RE-KILL (no appeal).
+- SECONDARY 1 reliability: max |mean(p_model)-freq| <=10pp across the 6 analyze_edges buckets, on settled FLB candidates.
+- SECONDARY 2 isotonic control (Option 1, locked 2026-07-26 pre-data — see addendum to the pre-reg doc): in-sample pava(entry->outcome) on the P6 fills; retrace isotonic decisions on the SAME fills at UNIT STAKE; FLB must STRICTLY beat isotonic mean (tie->re-kill). Reuses pava_fit/cluster_boot_mean from flb_oos_gate.py (P1 code path). In-sample + opposite-side-mirror-at-same-entry both bias toward isotonic (safe direction — control's job is to catch a false ship).
+- SECONDARY 3 partial-fill: >10% of fills fill_ratio<0.5 -> SUSPEND.
+- DRY-RUN (--dry-run) proven on the 45 excluded pre-P4 fills (ts<CUTOFF): all four gates execute end-to-end, realism self-check PASS (path changed PnL by the ~$56 taker fee, matching P4). Output DISCARDED, not interpreted.
+
+**Path-stability audit (Fable-5 item 2):** `git log c44aede..HEAD` over the entire FLB execution path = EMPTY. Confirmed unchanged since c44aede: bot/edge_engine.py, bot/settle.py, bot/edges/flb.py, bot/engine.py, bot/markets.py, bot/config.py, bot/regrade_fills.py, bot/flb_oos_gate.py, bot/run_scan.py, bot/analyze_edges.py, build_flb_calib.py. bot/data/flb_calib.json is GENERATED (untracked; deterministic from build_flb_calib.py + zenodo_resolved.jsonl, generator unchanged). The only commit since c44aede is 5ec9f56 (the read-only verdict harness — does NOT touch the execution path). Crontab observed (not git-tracked): FLB paper `30 6 * * * run_scan.py --job flb --mode paper`; settle `45 * * * * run_scan.py --job settle`.
+
+**FREEZE DECLARED:** the FLB execution path (scan → edge_engine → _store_fill → settle._fill_pnl) + calibration generator are CHANGE-FROZEN at c44aede until the P6 verdict lands. No edits except documented bug fixes. If a bug fix must land before freeze, record the fill-timestamp boundary (the first fill ts affected) here so the freeze analysis can check sensitivity:
+  - [none to date]
+Live arm STAYS HALTED (HALT_LIVE). No real money until P6 SHIP (primary + all three secondaries).
