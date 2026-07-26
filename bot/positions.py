@@ -5,7 +5,6 @@ from pathlib import Path
 from config import (
     BOT_DIR,
     DB_PATH,
-    PAPER_BANKROLL,
     PAPER_BANKROLL_ARB,
     PAPER_BANKROLL_FLB,
     PAPER_BANKROLL_USUD,
@@ -22,61 +21,21 @@ def _connect():
 
 
 def format_report(conn):
-    lines = [f"paper bankroll ${PAPER_BANKROLL:.2f}  (simulated, no real funds)", ""]
-
-    lines.append("=== open positions (unsettled bets) ===")
-    open_rows = conn.execute(
-        """
-        SELECT f.id, o.city, o.market_date, f.side, f.price, f.size,
-               (SELECT s.bucket_key FROM snapshots s WHERE s.market_id=f.market_id LIMIT 1) AS bucket
-        FROM fills f
-        JOIN orders o ON f.order_id = o.id
-        WHERE f.market_id NOT IN (SELECT market_id FROM settlements)
-        ORDER BY f.id DESC
-        """
-    ).fetchall()
-    if not open_rows:
-        lines.append("  (no open positions)")
-    for r in open_rows:
-        cost = r["price"] * r["size"]
-        lines.append(f"  #{r['id']:>3} {r['city']:13s} {r['market_date']} {r['side']:4s} "
-                     f"@{r['price']:.3f} x{r['size']:.1f}  cost=${cost:.2f}  bucket={r['bucket'] or '?'}")
-    lines.append("")
-
-    lines.append("=== settled (win/lose + pnl) ===")
-    settled_rows = conn.execute(
-        """
-        SELECT st.city, st.date, st.bucket_key, st.resolved_yes, st.pnl
-        FROM settlements st
-        WHERE st.market_id IN (SELECT market_id FROM fills)
-        ORDER BY st.id DESC
-        LIMIT 15
-        """
-    ).fetchall()
-    if not settled_rows:
-        lines.append("  (none settled yet)")
-    for r in settled_rows:
-        pnl = r["pnl"] or 0.0
-        verdict = "WIN " if pnl > 0 else ("LOSS" if pnl < 0 else "push")
-        won = "Y" if r["resolved_yes"] else "N"
-        lines.append(f"  {r['city']:13s} {r['date']} bucket={r['bucket_key'] or '?':12s} "
-                     f"bucket_won={won}  pnl=${pnl:+.2f}  {verdict}")
-    lines.append("")
-    lines.append(format_totals(conn))
-    return "\n".join(lines)
+    # `info` command. Weather removed 2026-07-26 (class closed) — shows FLB/ARB/
+    # USUD open bets + edge PnL totals only.
+    return format_open_all(conn) + "\n\n" + format_edge_totals(conn)
 
 def format_totals(conn):
     return format_edge_totals(conn)
 
 
 def format_pnl_both(paths=None):
-    # Combined A+B paper PnL for the Telegram `pnl` command. Bot B runs no TG
-    # cron (only A polls the chat), so a single reply must cover both DBs.
-    # Reads each by explicit path so labels are correct regardless of which
-    # instance the responder happens to run under.
+    # Paper PnL for the Telegram `pnl` command. Bot B (weather-only climatology)
+    # was removed 2026-07-26 when the weather class closed — only Bot A (FLB/ARB/
+    # USUD) remains. Reads by explicit path so labels are correct regardless of
+    # which instance the responder runs under.
     if paths is None:
-        paths = [("A", BOT_DIR / "polymarket_bot.db"),
-                 ("B", BOT_DIR / "polymarket_bot_B.db")]
+        paths = [("A", BOT_DIR / "polymarket_bot.db")]
     sections = []
     for tag, path in paths:
         path = Path(path)
@@ -109,23 +68,6 @@ def _parse_date(s):
 
 def format_open_all(conn):
     lines = ["=== open bets (all edges) ==="]
-    try:
-        wrows = conn.execute(
-            """SELECT f.id, o.city, o.market_date, f.side, f.price, f.size
-               FROM fills f JOIN orders o ON f.order_id = o.id
-               WHERE f.market_id NOT IN (SELECT market_id FROM settlements)
-               ORDER BY f.id DESC"""
-        ).fetchall()
-    except sqlite3.OperationalError:
-        wrows = []
-    lines.append("-- weather --")
-    if not wrows:
-        lines.append("  (no open)")
-    for r in wrows:
-        cost = r["price"] * r["size"]
-        lines.append(f"  #{r['id']} {r['city']} {r['market_date']} {r['side']} "
-                     f"@{r['price']:.3f} x{r['size']:.1f} cost=${cost:.2f}")
-
     try:
         prows = conn.execute(
             """SELECT f.id, f.edge, f.side, f.price, f.size,
@@ -165,25 +107,6 @@ def format_settled_day(conn, date_str):
     lines = [f"=== settled on {d.isoformat()} (HKT) ==="]
 
     try:
-        wrows = conn.execute(
-            """SELECT city, date, bucket_key, resolved_yes, pnl, ts
-               FROM settlements
-               WHERE market_id IN (SELECT market_id FROM fills)
-               ORDER BY ts DESC"""
-        ).fetchall()
-    except sqlite3.OperationalError:
-        wrows = []
-    w = [r for r in wrows if _hkt_date(r["ts"]) == d]
-    lines.append("-- weather --")
-    if not w:
-        lines.append("  (none)")
-    for r in w:
-        pnl = r["pnl"] or 0.0
-        won = "Y" if r["resolved_yes"] else "N"
-        lines.append(f"  {r['city']} {r['date']} bucket={r['bucket_key'] or '?'} "
-                     f"won={won} pnl=${pnl:+.2f}")
-
-    try:
         prows = conn.execute(
             """SELECT s.edge, s.resolved_yes, s.pnl, s.ts,
                (SELECT q.question FROM pm_snapshots q
@@ -217,18 +140,6 @@ def _edge_line(name, open_n, settled_n, realized, bankroll):
 
 def format_edge_totals(conn):
     lines = ["=== paper PnL (all edges) ==="]
-    try:
-        w_total = conn.execute("SELECT COUNT(*) FROM fills").fetchone()[0]
-        w_settled = conn.execute(
-            "SELECT COUNT(*) FROM fills WHERE market_id IN (SELECT market_id FROM settlements)"
-        ).fetchone()[0]
-        w_realized = conn.execute(
-            "SELECT COALESCE(SUM(pnl),0) FROM settlements WHERE market_id IN (SELECT market_id FROM fills)"
-        ).fetchone()[0]
-        lines.append(_edge_line("weather", w_total - w_settled, w_settled, w_realized, PAPER_BANKROLL))
-    except sqlite3.OperationalError:
-        lines.append("  weather:     (fills table not initialized)")
-
     bank = {"flb": PAPER_BANKROLL_FLB, "arb": PAPER_BANKROLL_ARB, "usud": PAPER_BANKROLL_USUD}
     try:
         settled = {r["edge"]: (r["n"], r["pnl"]) for r in conn.execute(
