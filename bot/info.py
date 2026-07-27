@@ -13,6 +13,7 @@ Commands:
   live              one-glance live-arm health (HALT/DRY_RUN/counts/gas/last tick)
   ticks [N]         last N live_ticks rows (evaluated/gated/skip history; default 10)
   gas               last 3 live_balances reads (gas/usdc trend)
+  d1                D1 maker-exec FLB arm (HALT_D1/counts/pnl+rebate/cursor/ticks)
   halt yes          set HALT_LIVE (pauses live arm; `halt` alone prompts)
   unhalt yes        clear HALT_LIVE (resumes live arm; `unhalt` alone prompts)
   settled           bets settled today (HKT)
@@ -26,12 +27,13 @@ cron line:
   */2 * * * * /root/polybot/.venv/bin/python /root/polybot/bot/info.py >> /root/polybot/info.log 2>&1
 """
 import os
+import sqlite3
 from pathlib import Path
 
 import httpx
 from dotenv import load_dotenv
 
-from config import TELEGRAM_TOKEN_ENV, TELEGRAM_CHAT_ID_ENV, INST_TAG
+from config import BOT_DIR, TELEGRAM_TOKEN_ENV, TELEGRAM_CHAT_ID_ENV, INST_TAG
 from positions import (
     _connect,
     format_report,
@@ -54,11 +56,69 @@ COMMANDS_HELP = """[A-LIVE] === commands ===
   live              one-glance live-arm health (HALT/DRY_RUN/counts/gas/last tick)
   ticks [N]         last N live_ticks rows (default 10)
   gas               last 3 live_balances reads (gas/usdc trend)
+  d1                D1 maker-exec FLB arm (HALT_D1/counts/pnl+rebate/cursor/ticks)
   halt yes          set HALT_LIVE (pauses live arm; `halt` alone prompts)
   unhalt yes        clear HALT_LIVE (resumes live arm; `unhalt` alone prompts)
   settled           bets settled today (HKT)
   settled YYYY-MM-DD bets settled on that date (HKT)
   commands          show this list"""
+
+
+def _d1_db_path():
+    return BOT_DIR / "polymarket_bot_d1.db"
+
+
+def format_d1_status():
+    # D1 maker-exec FLB arm status. Reads the D1 DB read-only (own isolation
+    # preserved — the paper/live arms cannot be touched from here). Does NOT
+    # import d1.py (heavy: pulls live_engine/markets/settle) — just sqlite +
+    # BOT_DIR for paths, mirroring how positions.py resolves DB files.
+    halt = os.path.exists(BOT_DIR / "HALT_D1")
+    lines = [f"=== D1 maker-exec FLB ({'HALTED' if halt else 'LIVE'}) ==="]
+    p = _d1_db_path()
+    if not p.exists():
+        lines.append("  (D1 DB not initialized yet — no scan has run)")
+        return "\n".join(lines)
+    uri = p.resolve().as_uri() + "?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        try:
+            rows = conn.execute(
+                "SELECT status, COUNT(*) AS n FROM d1_orders GROUP BY status "
+                "ORDER BY status"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            rows = []
+        if rows:
+            lines.append("  orders: " + " ".join(f"{r['status']}={r['n']}" for r in rows))
+        else:
+            lines.append("  orders: (none yet)")
+        try:
+            fills = conn.execute("SELECT COUNT(*) AS n FROM d1_fills").fetchone()["n"]
+            s_n = conn.execute("SELECT COUNT(*) AS n FROM d1_settlements").fetchone()["n"]
+            sp = conn.execute(
+                "SELECT COALESCE(SUM(pnl),0) AS pnl, COALESCE(SUM(rebate),0) AS rebate "
+                "FROM d1_settlements"
+            ).fetchone()
+            lines.append(f"  fills={fills} settled={s_n} "
+                         f"pnl=${sp['pnl']:+.2f} rebate=${sp['rebate']:.2f}")
+        except sqlite3.OperationalError:
+            lines.append("  (D1 tables not initialized)")
+        cur = conn.execute("SELECT v FROM meta WHERE k='candidate_cursor'").fetchone()
+        lines.append(f"  cursor={cur['v'] if cur else '(unset — first scan seeds)'}")
+        try:
+            ticks = conn.execute(
+                "SELECT ts, note FROM d1_ticks ORDER BY id DESC LIMIT 4"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            ticks = []
+        for t in ticks:
+            ts = (t["ts"] or "")[5:19].replace("T", " ")
+            lines.append(f"  {ts} {t['note']}")
+    finally:
+        conn.close()
+    return "\n".join(lines)
 
 
 def _get_last_update_id(conn):
@@ -163,6 +223,8 @@ def main():
                 _send(token, owner_chat, format_live_gas())
             except Exception as e:
                 _send(token, owner_chat, f"[A-LIVE] gas unavailable: {e}")
+        elif cmd == "d1":
+            _send(token, owner_chat, format_d1_status())
         elif cmd in ("halt", "unhalt"):
             try:
                 from live_control import handle_control
