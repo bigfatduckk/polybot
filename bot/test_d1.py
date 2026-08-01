@@ -275,6 +275,68 @@ def test_settle_maker_fee_zero_plus_rebate():
     print("  settle: maker fee=0, pnl=0.74, rebate computed OK")
 
 
+def test_reconcile_only_d1_maker_fills_recorded():
+    """reconcile_fills records ONLY genuine D1 maker fills — a trade whose
+    maker order id is a D1 clob_order_id. Foreign taker trades on the same NO
+    token (the 2026-08-01 bug: a 19.23-share third-party SELL landed on a
+    5-share D1 order by NO-token collision) and trades on a YES token are
+    skipped. raw_json is stored complete and parseable (no [:800] truncation)."""
+    tmp = tempfile.mkdtemp()
+    d1.D1_DB_PATH = os.path.join(tmp, "d1.db")
+    d1.init_d1_db()
+    conn = d1.get_d1_db()
+    conn.execute(
+        "INSERT INTO d1_orders(ts,candidate_id,market_id,condition_id,yes_token_id,"
+        "no_token_id,signal_side,exec_side,ask_price,size,notional,max_loss,"
+        "edge_at_scan,p_model,scan_mid,gap,tick_size,neg_risk,fee_rate,expiration,"
+        "dry_run,clob_order_id,status,raw_json) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("ts", 1, "mkt1", "cond1", "0xYES1", "0xNO1", "sell", "BUY", 0.54, 5.0,
+         2.7, 2.3, 0.08, 0.05, 0.5, 0.08, 0.001, 0, 0.04, 0, 0, "clob1",
+         "posted", "{}"))
+    conn.commit()
+    fc = FakeClient()
+    fc._open = []
+    fc._trades = [
+        # genuine D1 maker fill: clob1 is the maker, 3 of 5 filled @ NO 0.46.
+        # The long note forces raw_json past 800 chars so [:800] would truncate.
+        {"id": "trd-maker", "maker_order_id": "clob1", "taker_order_id": "0xT1",
+         "asset_id": "0xNO1", "size": "3", "price": "0.46", "side": "SELL",
+         "match_time": "1", "maker_orders": [{"order_id": "clob1"}],
+         "note": "z" * 900},
+        # foreign taker SELL on the SAME NO token; maker is a third party
+        # (mirrors the real bug: top-level maker_order_id null, the third-party
+        # order id in maker_orders). Old code recorded this as a D1 fill.
+        {"id": "trd-foreign-no", "maker_order_id": None, "taker_order_id": "0xT2",
+         "asset_id": "0xNO1", "size": "19.23", "price": "0.46", "side": "SELL",
+         "match_time": "2",
+         "maker_orders": [{"order_id": "0x8b06133c6d29543e55856f4b22280962316a9d0df7f457ed33add9625d31b029"}]},
+        # foreign taker BUY on a YES token (the 494-share case)
+        {"id": "trd-foreign-yes", "maker_order_id": None, "taker_order_id": "0xT3",
+         "asset_id": "0xYES1", "size": "494", "price": "0.43", "side": "BUY",
+         "match_time": "3", "maker_orders": [{"order_id": "0xOTHER"}]},
+    ]
+    n = d1.reconcile_fills(fc, conn)
+    assert n == 1, f"only the genuine D1 maker fill recorded, got {n}"
+    fills = conn.execute(
+        "SELECT order_id, clob_trade_id, side, price, size FROM d1_fills ORDER BY id"
+    ).fetchall()
+    assert len(fills) == 1, f"expected 1 fill, got {len(fills)}"
+    f = fills[0]
+    assert f["clob_trade_id"] == "trd-maker", f["clob_trade_id"]
+    assert f["order_id"] == 1, f["order_id"]
+    assert f["side"] == "sell" and abs(f["price"] - 0.54) < 1e-9, (f["side"], f["price"])
+    assert abs(f["size"] - 3.0) < 1e-9, f["size"]
+    rj = conn.execute(
+        "SELECT raw_json FROM d1_fills WHERE clob_trade_id='trd-maker'"
+    ).fetchone()["raw_json"]
+    assert json.loads(rj)["id"] == "trd-maker", "raw_json must be complete, parseable JSON"
+    st = conn.execute("SELECT status FROM d1_orders WHERE id=1").fetchone()["status"]
+    assert st == "filled", st
+    conn.close()
+    print("  reconcile: only D1 maker fills recorded, foreign taker trades skipped OK")
+
+
 def main():
     tests = [
         test_prepare_order_ask_level_and_size,
@@ -285,6 +347,7 @@ def main():
         test_submit_live_posts_with_gtd_post_only,
         test_get_client_uses_d1_env_not_shared,
         test_settle_maker_fee_zero_plus_rebate,
+        test_reconcile_only_d1_maker_fills_recorded,
     ]
     failed = 0
     for t in tests:

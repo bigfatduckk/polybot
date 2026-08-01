@@ -441,6 +441,7 @@ def reconcile_fills(client, conn):
     open_by_id = {str(o.get("id")): o for o in open_orders if isinstance(o, dict)}
     seen_trade_ids = {r["clob_trade_id"] for r in conn.execute(
         "SELECT clob_trade_id FROM d1_fills").fetchall() if r["clob_trade_id"]}
+    d1_clob_ids = {str(r["clob_order_id"]) for r in rows}
     order_by_clob = {str(r["clob_order_id"]): r for r in rows}
     new_fills = 0
     for t in trades:
@@ -449,18 +450,25 @@ def reconcile_fills(client, conn):
         tid = str(t.get("id") or "")
         if not tid or tid in seen_trade_ids:
             continue
-        # A maker resting order is matched as the maker_order_id of a taker trade.
-        clob_id = str(t.get("maker_order_id") or t.get("taker_order_id")
-                      or t.get("order_id") or "")
-        order = order_by_clob.get(clob_id)
-        if order is None:
-            asset = str(t.get("asset_id") or "")
-            for r in rows:
-                if r["no_token_id"] == asset:
-                    order = r
-                    break
-        if order is None:
+        # D1 only posts maker orders (post_only=True); a trade is a D1 fill only
+        # if D1's resting order is the maker. Match on the trade's maker order
+        # id(s) only — never the taker side, never by token-id. The funder may
+        # place unrelated taker trades on the same token, and daily re-posts
+        # mean several D1 orders share one NO token; token matching misattributes
+        # foreign taker fills to D1 orders (the 2026-08-01 19.23/5-share bug).
+        maker_ids = set()
+        mid = str(t.get("maker_order_id") or "")
+        if mid:
+            maker_ids.add(mid)
+        for mo in (t.get("maker_orders") or []):
+            if isinstance(mo, dict):
+                moid = str(mo.get("order_id") or mo.get("id") or "")
+                if moid:
+                    maker_ids.add(moid)
+        clob_id = next((m for m in maker_ids if m in d1_clob_ids), None)
+        if clob_id is None:
             continue
+        order = order_by_clob[clob_id]
         t_price = float(t.get("price") or 0.0)
         size = float(t.get("size") or 0.0)
         # BUY-NO fill (NO trade at p_no) → recorded in YES-space: side='sell',
@@ -471,7 +479,7 @@ def reconcile_fills(client, conn):
             f"INSERT INTO d1_fills({_DF_COLS}) VALUES({_DF_PH})",
             (_now_iso(), order["id"], tid, order["market_id"],
              order["yes_token_id"], "sell", 1.0 - t_price, size, 0.0,
-             str(t.get("match_time") or ""), json.dumps(t, default=str)[:800]),
+             str(t.get("match_time") or ""), json.dumps(t, default=str)),
         )
         seen_trade_ids.add(tid)
         new_fills += 1
